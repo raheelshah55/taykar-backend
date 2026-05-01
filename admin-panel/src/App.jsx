@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 
-const API_URL = 'https://taykar-backend.onrender.com'; // Keep as https://taykar-backend.onrender.com for your laptop
+const API_URL = ' https://taykar-backend.onrender.com'; // Keep as  https://taykar-backend.onrender.com for your laptop
 
 function App() {
   const [email, setEmail] = useState('ali@test.com');
