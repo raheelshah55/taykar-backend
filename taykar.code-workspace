@@ -1,0 +1,8 @@
+{
+  "folders":[
+    { "path": "backend" },
+    { "path": "mobile-app" },
+    { "path": "admin-panel" }
+  ],
+  "settings": {}
+}
