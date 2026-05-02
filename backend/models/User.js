@@ -2,18 +2,18 @@ const mongoose = require('mongoose');
 
 const userSchema = new mongoose.Schema({
     name: { type: String, required: true },
-    email: { type: String, required: true, unique: true },
-    password: { type: String, required: true },
-    phoneNumber: { type: String, required: true },
+    phoneNumber: { type: String, required: true, unique: true },
     
-    // THE MAGIC TOGGLE: Are they currently looking for a ride, or driving?
+    // Made these optional for Admin use only!
+    email: { type: String, sparse: true }, 
+    password: { type: String },
+    
     activeRole: { type: String, enum:['rider', 'driver', 'admin'], default: 'rider' },
     
-    // DRIVER DATA: This stays hidden until they switch to Driver mode!
     driverProfile: {
-        isApproved: { type: Boolean, default: false }, // Admin has to approve their license later!
-        isOnline: { type: Boolean, default: false },   // Are they currently accepting rides?
-        vehicleInfo: { type: String, default: '' },    // e.g., "Toyota Corolla - White"
+        isApproved: { type: Boolean, default: false },
+        isOnline: { type: Boolean, default: false },
+        vehicleInfo: { type: String, default: '' },
         licensePlate: { type: String, default: '' }
     }
 }, { timestamps: true });

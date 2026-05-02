@@ -6,69 +6,82 @@ const verifyToken = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-// --- 1. REGISTER ---
-router.post('/register', async (req, res) => {
+// --- 1. SEND OTP (SIMULATED) ---
+router.post('/send-otp', async (req, res) => {
     try {
-        const { name, email, password, phoneNumber } = req.body;
-
-        const existingUser = await User.findOne({ email });
-        if (existingUser) return res.status(400).json({ message: "Email already exists" });
-
-        const hashedPassword = await bcrypt.hash(password, 10);
-
-        const newUser = new User({
-            name, email, phoneNumber, password: hashedPassword
-        });
-
-        await newUser.save();
-        res.status(201).json({ message: "Account created successfully!" });
+        const { phoneNumber } = req.body;
+        if (!phoneNumber) return res.status(400).json({ message: "Phone number required" });
+        
+        // In a real app, you would trigger Twilio/Firebase SMS here.
+        // For testing, we will pretend we sent "1234".
+        res.status(200).json({ message: "OTP Sent!", otp: "1234" });
     } catch (error) {
         res.status(500).json({ message: "Server error" });
     }
 });
 
-// --- 2. LOGIN ---
+// --- 2. VERIFY OTP & LOGIN/CHECK ---
+router.post('/verify-otp', async (req, res) => {
+    try {
+        const { phoneNumber, otp, selectedRole } = req.body;
+        
+        if (otp !== "1234") return res.status(400).json({ message: "Invalid OTP Code" });
+
+        let user = await User.findOne({ phoneNumber });
+        
+        if (user) {
+            // User exists! Auto-switch them to the role they selected on the Welcome Screen
+            user.activeRole = selectedRole;
+            await user.save();
+            
+            const token = jwt.sign({ userId: user._id, activeRole: user.activeRole }, process.env.JWT_SECRET, { expiresIn: '7d' });
+            return res.status(200).json({ isRegistered: true, token, user });
+        } else {
+            // User doesn't exist yet! Tell the app to show the Sign Up screen.
+            return res.status(200).json({ isRegistered: false });
+        }
+    } catch (error) {
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// --- 3. REGISTER NEW PHONE USER ---
+router.post('/register', async (req, res) => {
+    try {
+        const { name, phoneNumber, selectedRole } = req.body;
+        
+        const newUser = new User({ name, phoneNumber, activeRole: selectedRole });
+        await newUser.save();
+
+        const token = jwt.sign({ userId: newUser._id, activeRole: newUser.activeRole }, process.env.JWT_SECRET, { expiresIn: '7d' });
+        res.status(201).json({ token, user: newUser });
+    } catch (error) {
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// --- 4. OLD LOGIN (Kept for Admin Panel only) ---
 router.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
-
         const user = await User.findOne({ email });
-        if (!user) return res.status(400).json({ message: "Invalid email or password" });
-
+        if (!user) return res.status(400).json({ message: "Invalid email" });
         const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) return res.status(400).json({ message: "Invalid email or password" });
-
-        // We put their activeRole in the VIP Pass!
+        if (!isMatch) return res.status(400).json({ message: "Invalid password" });
         const token = jwt.sign({ userId: user._id, activeRole: user.activeRole }, process.env.JWT_SECRET, { expiresIn: '7d' });
-
-        res.status(200).json({ message: "Login successful", token, user });
-    } catch (error) {
-        res.status(500).json({ message: "Server error" });
-    }
+        res.status(200).json({ token, user });
+    } catch (error) { res.status(500).json({ message: "Server error" }); }
 });
 
-// --- 3. SWITCH TO DRIVER / RIDER ---
 router.put('/switch-role', verifyToken, async (req, res) => {
     try {
-        const { newRole } = req.body; // 'rider' or 'driver'
-
+        const { newRole } = req.body;
         const user = await User.findById(req.user.userId);
-        
-        // If they want to be a driver, we can check if admin approved them!
-       // if (newRole === 'driver' && !user.driverProfile.isApproved) {
-          //  return res.status(403).json({ message: "You must be approved by an Admin to drive." });
-      //  }
-
         user.activeRole = newRole;
         await user.save();
-
-        // Generate a fresh token with their new role!
-        const newToken = jwt.sign({ userId: user._id, activeRole: user.activeRole }, process.env.JWT_SECRET, { expiresIn: '7d' });
-
-        res.status(200).json({ message: `Successfully switched to ${newRole} mode!`, token: newToken, user });
-    } catch (error) {
-        res.status(500).json({ message: "Server error" });
-    }
+        const token = jwt.sign({ userId: user._id, activeRole: user.activeRole }, process.env.JWT_SECRET, { expiresIn: '7d' });
+        res.status(200).json({ token, user });
+    } catch (error) { res.status(500).json({ message: "Server error" }); }
 });
 
 module.exports = router;
