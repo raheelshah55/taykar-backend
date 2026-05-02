@@ -36,21 +36,30 @@ router.post('/verify-otp', async (req, res) => {
     } catch (error) { res.status(500).json({ message: "Server error" }); }
 });
 
-// 3. REGISTER NEW PHONE USER
+// --- 3. REGISTER NEW PHONE USER ---
 router.post('/register', async (req, res) => {
     try {
-        const { name, phoneNumber, selectedRole } = req.body;
+        const { firstName, lastName, city, address, phoneNumber, selectedRole, cnicFront, cnicBack, vehicleDocs, email } = req.body;
         
-        // BUG FIX: Generate fake email so MongoDB doesn't crash!
-        const fakeEmail = `${phoneNumber}@taykar.com`;
+        const fakeEmail = email || `${phoneNumber}@taykar.com`;
         const fakePassword = await bcrypt.hash("phoneUser123", 10);
 
         const newUser = new User({ 
-            name, 
+            firstName, 
+            lastName,
+            city,
+            address,
             phoneNumber, 
             activeRole: selectedRole || 'rider',
             email: fakeEmail,
-            password: fakePassword
+            password: fakePassword,
+            driverProfile: {
+                isApproved: false,
+                isOnline: false,
+                cnicFront: cnicFront || '',
+                cnicBack: cnicBack || '',
+                vehicleDocs: vehicleDocs || ''
+            }
         });
         
         await newUser.save();
@@ -62,5 +71,3 @@ router.post('/register', async (req, res) => {
         res.status(500).json({ message: "Server error" }); 
     }
 });
-
-module.exports = router;
