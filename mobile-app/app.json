@@ -1,0 +1,41 @@
+{
+  "expo": {
+    "name": "TayKar",
+    "slug": "mobile-app",
+    "version": "1.0.0",
+    "orientation": "portrait",
+    "icon": "./assets/icon.png",
+    "userInterfaceStyle": "light",
+    "splash": {
+      "image": "./assets/splash.png",
+      "resizeMode": "contain",
+      "backgroundColor": "#00D06C"
+    },
+    "android": {
+      "adaptiveIcon": {
+        "foregroundImage": "./assets/adaptive-icon.png",
+        "backgroundColor": "#00D06C"
+      },
+      "package": "com.RaheelShah.taykar",
+      "config": {
+        "googleMaps": {
+          "apiKey": "AIzaSyC7sThLgCleKTbdOkjdyWbISY89AyoxTvY"
+        }
+      }
+    },
+    "web": {
+      "favicon": "./assets/favicon.png"
+    },
+    "extra": {
+      "eas": {
+        "projectId": "b75b0a2a-5716-40a0-adb2-f00ee63194e9"
+      }
+    },
+    "runtimeVersion": {
+      "policy": "appVersion"
+    },
+    "updates": {
+      "url": "https://u.expo.dev/b75b0a2a-5716-40a0-adb2-f00ee63194e9"
+    }
+  }
+}
