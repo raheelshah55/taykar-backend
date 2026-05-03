@@ -71,5 +71,26 @@ router.post('/register', async (req, res) => {
         res.status(500).json({ message: "Server error" }); 
     }
 });
+// --- 5. UPLOAD DRIVER DOCUMENTS (For existing riders switching to driver) ---
+router.put('/upload-docs', verifyToken, async (req, res) => {
+    try {
+        const { cnicFront, cnicBack, vehicleDocs, email } = req.body;
+        const user = await User.findById(req.user.userId);
+        
+        if (!user) return res.status(404).json({ message: "User not found" });
 
+        // Update their profile with the new docs and set email!
+        if (email) user.email = email;
+        user.driverProfile.cnicFront = cnicFront;
+        user.driverProfile.cnicBack = cnicBack;
+        user.driverProfile.vehicleDocs = vehicleDocs;
+        user.driverProfile.isApproved = false; // Admin must review!
+        
+        await user.save();
+        res.status(200).json({ message: "Documents uploaded successfully!", user });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: "Server error" });
+    }
+});
 module.exports = router;
