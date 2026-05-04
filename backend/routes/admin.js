@@ -99,4 +99,30 @@ router.put('/settings', verifyToken, async (req, res) => {
         res.status(500).json({ message: "Server error" });
     }
 });
+// --- 8. SUSPEND/UNSUSPEND USER ---
+router.put('/users/:id/suspend', verifyToken, async (req, res) => {
+    try {
+        const user = await User.findById(req.params.id);
+        if (!user) return res.status(404).json({ message: "User not found" });
+        
+        // We will toggle their driver approval off as a "suspension"
+        if (user.driverProfile) {
+            user.driverProfile.isApproved = false;
+        }
+        await user.save();
+        res.status(200).json({ message: "User suspended!", user });
+    } catch (error) {
+        res.status(500).json({ message: "Server error" });
+    }
+});
+
+// --- 9. DELETE A RIDE FROM HISTORY ---
+router.delete('/rides/:id', verifyToken, async (req, res) => {
+    try {
+        await Ride.findByIdAndDelete(req.params.id);
+        res.status(200).json({ message: "Ride deleted successfully" });
+    } catch (error) {
+        res.status(500).json({ message: "Server error" });
+    }
+});
 module.exports = router;

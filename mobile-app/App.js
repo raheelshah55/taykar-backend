@@ -8,7 +8,7 @@ import RoleSelectionScreen from './screens/RoleSelectionScreen';
 import PhoneScreen from './screens/PhoneScreen';
 import OTPScreen from './screens/OTPScreen';
 import RegisterScreen from './screens/RegisterScreen';
-
+import UpgradeDriverScreen from './screens/UpgradeDriverScreen';
 import MainScreen from './screens/MainScreen';
 import ProfileScreen from './screens/ProfileScreen';
 // import LocationSearchScreen from './screens/LocationSearchScreen'; // We will build this in Phase 3!
@@ -44,6 +44,7 @@ function RootNavigator() {
             <Stack.Screen name="Main" component={MainScreen} />
             <Stack.Screen name="Profile" component={ProfileScreen} />
             <Stack.Screen name="LocationSearch" component={LocationSearchScreen} />
+            <Stack.Screen name="UpgradeDriver" component={UpgradeDriverScreen} />
           </>
         )}
       </Stack.Navigator>
