@@ -17,42 +17,29 @@ const formatPhone = (phone) => {
     return phone;
 };
 
-// --- 1. SEND REAL SMS OTP ---
+// --- 1. SEND OTP (BYPASS MODE) ---
 router.post('/send-otp', async (req, res) => {
     try {
         const { phoneNumber } = req.body;
         if (!phoneNumber) return res.status(400).json({ message: "Phone number required" });
         
-        const formattedPhone = formatPhone(phoneNumber);
+        // ✨ CHEAT CODE: Twilio is silenced so it doesn't block you!
+        // await client.verify.v2.services(process.env.TWILIO_VERIFY_SID).verifications.create({ to: formattedPhone, channel: 'sms' });
 
-        // Tell Twilio to send a 4-digit or 6-digit text message!
-        await client.verify.v2.services(process.env.TWILIO_VERIFY_SID)
-            .verifications
-            .create({ to: formattedPhone, channel: 'sms' });
-
-        res.status(200).json({ message: "Real OTP SMS Sent!" });
+        res.status(200).json({ message: "Cheat Code OTP Sent!" });
     } catch (error) {
-        console.error("Twilio Send Error:", error);
-        res.status(500).json({ message: "Failed to send SMS. Check Twilio logs." });
+        res.status(500).json({ message: "Failed" });
     }
 });
 
-// --- 2. VERIFY REAL OTP & LOGIN ---
+// --- 2. VERIFY OTP & LOGIN (BYPASS MODE) ---
 router.post('/verify-otp', async (req, res) => {
     try {
         const { phoneNumber, otp, selectedRole } = req.body;
-        const formattedPhone = formatPhone(phoneNumber);
+        
+        // ✨ CHEAT CODE: Just type 123456 to get in!
+        if (otp !== '123456') return res.status(400).json({ message: "Incorrect OTP Code!" });
 
-        // Tell Twilio to check if the code the user typed is correct!
-        const verification = await client.verify.v2.services(process.env.TWILIO_VERIFY_SID)
-            .verificationChecks
-            .create({ to: formattedPhone, code: otp });
-
-        if (verification.status !== 'approved') {
-            return res.status(400).json({ message: "Incorrect OTP Code!" });
-        }
-
-        // If Twilio says it's correct, log them in!
         let user = await User.findOne({ phoneNumber });
         
         if (user) {
@@ -64,11 +51,9 @@ router.post('/verify-otp', async (req, res) => {
             return res.status(200).json({ isRegistered: false });
         }
     } catch (error) {
-        console.error("Twilio Verify Error:", error);
         res.status(500).json({ message: "OTP Verification failed." });
     }
 });
-
 // --- 3. REGISTER NEW PHONE USER ---
 router.post('/register', async (req, res) => {
     try {

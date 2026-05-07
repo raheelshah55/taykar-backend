@@ -15,13 +15,22 @@ const io = new Server(server, {
 app.set('io', io);
 
 io.on('connection', (socket) => {
-    console.log('📱 Device connected for Ride Hailing:', socket.id);
+    console.log('📱 Device connected for TayKar:', socket.id);
     
+    // ✨ NEW: Driver sends their live location ✨
+    socket.on('driverLocation', (data) => {
+        // Data contains { rideId, latitude, longitude }
+        // Broadcast this to ONLY the rider involved in this ride!
+        io.emit(`riderTracking:${data.rideId}`, {
+            latitude: data.latitude,
+            longitude: data.longitude
+        });
+    });
+
     socket.on('disconnect', () => {
         console.log('Device disconnected');
     });
 });
-
 // Middleware
 app.use(cors());
 app.use(express.json());
