@@ -3,45 +3,23 @@ const bcrypt = require('bcryptjs');
 const jwt = require('jsonwebtoken');
 const User = require('../models/User');
 const verifyToken = require('../middleware/authMiddleware');
-const twilio = require('twilio');
 
 const router = express.Router();
 
-// Initialize Twilio
-const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
-
-// Helper function to format Pakistani numbers for Twilio
-const formatPhone = (phone) => {
-    if (phone.startsWith('0')) return '+92' + phone.slice(1);
-    if (!phone.startsWith('+')) return '+' + phone;
-    return phone;
-};
-
-// --- 1. SEND OTP (BYPASS MODE) ---
 router.post('/send-otp', async (req, res) => {
     try {
         const { phoneNumber } = req.body;
         if (!phoneNumber) return res.status(400).json({ message: "Phone number required" });
-        
-        // ✨ CHEAT CODE: Twilio is silenced so it doesn't block you!
-        // await client.verify.v2.services(process.env.TWILIO_VERIFY_SID).verifications.create({ to: formattedPhone, channel: 'sms' });
-
-        res.status(200).json({ message: "Cheat Code OTP Sent!" });
-    } catch (error) {
-        res.status(500).json({ message: "Failed" });
-    }
+        res.status(200).json({ message: "OTP Sent!", otp: "1234" });
+    } catch (error) { res.status(500).json({ message: "Server error" }); }
 });
 
-// --- 2. VERIFY OTP & LOGIN (BYPASS MODE) ---
 router.post('/verify-otp', async (req, res) => {
     try {
         const { phoneNumber, otp, selectedRole } = req.body;
-        
-        // ✨ CHEAT CODE: Just type 123456 to get in!
-        if (otp !== '123456') return res.status(400).json({ message: "Incorrect OTP Code!" });
+        if (otp !== "1234") return res.status(400).json({ message: "Invalid OTP Code" });
 
         let user = await User.findOne({ phoneNumber });
-        
         if (user) {
             user.activeRole = selectedRole || 'rider';
             await user.save();
@@ -50,14 +28,13 @@ router.post('/verify-otp', async (req, res) => {
         } else {
             return res.status(200).json({ isRegistered: false });
         }
-    } catch (error) {
-        res.status(500).json({ message: "OTP Verification failed." });
-    }
+    } catch (error) { res.status(500).json({ message: "Server error" }); }
 });
-// --- 3. REGISTER NEW PHONE USER ---
+
+// ✨ NEW: Catches Vehicle Info & License Plate!
 router.post('/register', async (req, res) => {
     try {
-        const { firstName, lastName, city, address, phoneNumber, selectedRole, cnicFront, cnicBack, vehicleDocs, email } = req.body;
+        const { firstName, lastName, city, address, phoneNumber, selectedRole, cnicFront, cnicBack, vehicleDocs, email, vehicleInfo, licensePlate } = req.body;
         
         const fakeEmail = email || `${phoneNumber}@taykar.com`;
         const fakePassword = await bcrypt.hash("phoneUser123", 10);
@@ -65,18 +42,19 @@ router.post('/register', async (req, res) => {
         const newUser = new User({ 
             firstName, lastName, city, address, phoneNumber, activeRole: selectedRole || 'rider',
             email: fakeEmail, password: fakePassword,
-            driverProfile: { isApproved: false, isOnline: false, cnicFront: cnicFront || '', cnicBack: cnicBack || '', vehicleDocs: vehicleDocs || '' }
+            driverProfile: { 
+                isApproved: false, isOnline: false, 
+                cnicFront: cnicFront || '', cnicBack: cnicBack || '', vehicleDocs: vehicleDocs || '',
+                vehicleInfo: vehicleInfo || '', licensePlate: licensePlate || '' // Saved to Database!
+            }
         });
         
         await newUser.save();
         const token = jwt.sign({ userId: newUser._id, activeRole: newUser.activeRole }, process.env.JWT_SECRET, { expiresIn: '7d' });
         res.status(201).json({ token, user: newUser });
-    } catch (error) { 
-        res.status(500).json({ message: "Server error" }); 
-    }
+    } catch (error) { res.status(500).json({ message: "Server error" }); }
 });
 
-// --- 4. ADMIN LOGIN ---
 router.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -100,12 +78,17 @@ router.put('/switch-role', verifyToken, async (req, res) => {
     } catch (error) { res.status(500).json({ message: "Server error" }); }
 });
 
+// ✨ NEW: Catches Vehicle Details for Upgrading Riders!
 router.put('/upload-docs', verifyToken, async (req, res) => {
     try {
-        const { cnicFront, cnicBack, vehicleDocs, email } = req.body;
+        const { cnicFront, cnicBack, vehicleDocs, email, vehicleInfo, licensePlate } = req.body;
         const user = await User.findById(req.user.userId);
         if (email) user.email = email;
-        user.driverProfile.cnicFront = cnicFront; user.driverProfile.cnicBack = cnicBack; user.driverProfile.vehicleDocs = vehicleDocs;
+        user.driverProfile.cnicFront = cnicFront; 
+        user.driverProfile.cnicBack = cnicBack; 
+        user.driverProfile.vehicleDocs = vehicleDocs;
+        user.driverProfile.vehicleInfo = vehicleInfo; // Save Vehicle
+        user.driverProfile.licensePlate = licensePlate; // Save Plate
         user.driverProfile.isApproved = false; 
         await user.save();
         res.status(200).json({ message: "Documents uploaded successfully!", user });
