@@ -20,7 +20,7 @@ export default function PhoneAuthScreen({ navigation, route }) {
     <View style={styles.container}>
       <Text style={styles.title}>Enter your number</Text>
       <Text style={styles.subtitle}>We will send a 4-digit code to verify</Text>
-      <TextInput style={styles.input} placeholder="e.g. 03001234567" keyboardType="numeric" value={phone} onChangeText={setPhone} autoFocus />
+      <TextInput style={styles.input} placeholder="e.g. 0300123456567" keyboardType="numeric" value={phone} onChangeText={setPhone} autoFocus />
       <TouchableOpacity style={styles.button} onPress={sendOTP}>
         <Text style={styles.buttonText}>Continue</Text>
       </TouchableOpacity>

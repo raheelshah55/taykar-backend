@@ -171,12 +171,15 @@ function App() {
                 <tr key={u._id} style={{ borderBottom: '1px solid #eee' }}>
                   <td style={{ padding: '12px 0', fontWeight: 'bold' }}>{u.firstName || u.name} {u.lastName || ''}</td>
                   <td>{u.activeRole === 'driver' ? '👨‍✈️ Driver' : '🙋‍♂️ Rider'}</td>
-                  <td style={{ fontSize: '14px', color: '#555' }}>📞 {u.phoneNumber}<br/>📍 {u.city || 'N/A'}</td>
-                  <td>
-                    {u.activeRole === 'driver' ? (
-                      u.driverProfile?.isApproved ? <span style={{ backgroundColor: '#e8f8f5', color: '#00D06C', padding: '5px 10px', borderRadius: '10px', fontSize: '12px', fontWeight: 'bold' }}>Verified</span>
-                      : <span style={{ backgroundColor: '#fdf0f4', color: '#e74c3c', padding: '5px 10px', borderRadius: '10px', fontSize: '12px', fontWeight: 'bold' }}>Pending Review</span>
-                    ) : <span style={{ color: '#aaa' }}>N/A</span>}
+                  <td style={{ fontSize: '14px', color: '#555' }}>
+                    📞 {u.phoneNumber}<br/>
+                    📍 {u.city || 'N/A'}<br/>
+                    {u.activeRole === 'driver' && (
+                      <span style={{ color: '#00D06C', fontWeight: 'bold' }}>
+                        🚗 {u.driverProfile?.vehicleInfo || 'No vehicle data'}<br/>
+                        🏷️ {u.driverProfile?.licensePlate || 'N/A'}
+                      </span>
+                    )}
                   </td>
                   <td style={{ display: 'flex', gap: '8px', paddingTop: '10px', flexWrap: 'wrap' }}>
                     {u.activeRole === 'driver' && (

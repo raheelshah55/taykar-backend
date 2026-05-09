@@ -6,18 +6,22 @@ const verifyToken = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
+// --- 1. SEND OTP (CHEAT CODE BYPASS) ---
 router.post('/send-otp', async (req, res) => {
     try {
         const { phoneNumber } = req.body;
         if (!phoneNumber) return res.status(400).json({ message: "Phone number required" });
-        res.status(200).json({ message: "OTP Sent!", otp: "1234" });
+        res.status(200).json({ message: "OTP Sent!", otp: "123456" });
     } catch (error) { res.status(500).json({ message: "Server error" }); }
 });
 
+// --- 2. VERIFY OTP & LOGIN ---
 router.post('/verify-otp', async (req, res) => {
     try {
         const { phoneNumber, otp, selectedRole } = req.body;
-        if (otp !== "1234") return res.status(400).json({ message: "Invalid OTP Code" });
+        
+        // ✨ THE FIX: Explicitly checks for 123456 ✨
+        if (otp !== "123456") return res.status(400).json({ message: "Invalid OTP Code" });
 
         let user = await User.findOne({ phoneNumber });
         if (user) {
@@ -31,7 +35,7 @@ router.post('/verify-otp', async (req, res) => {
     } catch (error) { res.status(500).json({ message: "Server error" }); }
 });
 
-// ✨ NEW: Catches Vehicle Info & License Plate!
+// --- 3. REGISTER NEW PHONE USER (With Vehicle Info) ---
 router.post('/register', async (req, res) => {
     try {
         const { firstName, lastName, city, address, phoneNumber, selectedRole, cnicFront, cnicBack, vehicleDocs, email, vehicleInfo, licensePlate } = req.body;
@@ -45,7 +49,7 @@ router.post('/register', async (req, res) => {
             driverProfile: { 
                 isApproved: false, isOnline: false, 
                 cnicFront: cnicFront || '', cnicBack: cnicBack || '', vehicleDocs: vehicleDocs || '',
-                vehicleInfo: vehicleInfo || '', licensePlate: licensePlate || '' // Saved to Database!
+                vehicleInfo: vehicleInfo || '', licensePlate: licensePlate || ''
             }
         });
         
@@ -55,6 +59,7 @@ router.post('/register', async (req, res) => {
     } catch (error) { res.status(500).json({ message: "Server error" }); }
 });
 
+// --- 4. ADMIN LOGIN ---
 router.post('/login', async (req, res) => {
     try {
         const { email, password } = req.body;
@@ -67,6 +72,7 @@ router.post('/login', async (req, res) => {
     } catch (error) { res.status(500).json({ message: "Server error" }); }
 });
 
+// --- 5. SWITCH ROLE ---
 router.put('/switch-role', verifyToken, async (req, res) => {
     try {
         const { newRole } = req.body;
@@ -78,7 +84,7 @@ router.put('/switch-role', verifyToken, async (req, res) => {
     } catch (error) { res.status(500).json({ message: "Server error" }); }
 });
 
-// ✨ NEW: Catches Vehicle Details for Upgrading Riders!
+// --- 6. UPLOAD DOCS (For Upgrading Riders) ---
 router.put('/upload-docs', verifyToken, async (req, res) => {
     try {
         const { cnicFront, cnicBack, vehicleDocs, email, vehicleInfo, licensePlate } = req.body;
@@ -87,8 +93,8 @@ router.put('/upload-docs', verifyToken, async (req, res) => {
         user.driverProfile.cnicFront = cnicFront; 
         user.driverProfile.cnicBack = cnicBack; 
         user.driverProfile.vehicleDocs = vehicleDocs;
-        user.driverProfile.vehicleInfo = vehicleInfo; // Save Vehicle
-        user.driverProfile.licensePlate = licensePlate; // Save Plate
+        user.driverProfile.vehicleInfo = vehicleInfo;
+        user.driverProfile.licensePlate = licensePlate;
         user.driverProfile.isApproved = false; 
         await user.save();
         res.status(200).json({ message: "Documents uploaded successfully!", user });
