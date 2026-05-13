@@ -77,15 +77,16 @@ router.put('/:rideId/accept', verifyToken, async (req, res) => {
     }
 });
 
-// --- 5. GET ACTIVE RIDE (For both Rider and Driver) ---
+// --- 5. GET ACTIVE RIDE (Secure Data Mode) ---
 router.get('/active', verifyToken, async (req, res) => {
     try {
         const activeRide = await Ride.findOne({
             $or:[{ rider: req.user.userId }, { driver: req.user.userId }],
             status: { $in:['accepted', 'in_transit'] }
         })
-        .populate('rider', 'name phoneNumber')
-        .populate('driver', 'name phoneNumber');
+        // ✨ PRIVACY FIX: We explicitly ask for names and vehicle info, but EXCLUDE phone numbers! ✨
+        .populate('rider', 'firstName lastName name') 
+        .populate('driver', 'firstName lastName name driverProfile.vehicleInfo driverProfile.licensePlate');
 
         res.status(200).json(activeRide);
     } catch (error) {

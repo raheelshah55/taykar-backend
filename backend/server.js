@@ -16,7 +16,11 @@ app.set('io', io);
 
 io.on('connection', (socket) => {
     console.log('📱 Device connected for TayKar:', socket.id);
-    
+    // ✨ NEW: Secure In-App Chat Relay ✨
+    socket.on('sendMessage', (data) => {
+        // Instantly beams the message to the other person's phone!
+        io.emit('receiveMessage', data);
+    });
     // ✨ NEW: Driver sends their live location ✨
     socket.on('driverLocation', (data) => {
         // Data contains { rideId, latitude, longitude }
