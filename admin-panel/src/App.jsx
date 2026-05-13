@@ -1,8 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 
-// ⚠️ CHANGE TO YOUR LIVE RENDER URL 
-const API_URL = 'https://taykar-backend.onrender.com';
+const API_URL = 'https://taykar-backend.onrender.com'; // ⚠️ Change to your Render URL
 
 const BRAND = '#00D06C';
 const DARK_BG = '#03060A';
@@ -10,18 +9,25 @@ const CARD_BG = '#0A121A';
 const BORDER = '#1A2634';
 
 function App() {
-  const [email, setEmail] = useState('');
-  const [password, setPassword] = useState('');
+  const [email, setEmail] = useState('ali@test.com');
+  const [password, setPassword] = useState('password123');
   const [token, setToken] = useState(localStorage.getItem('adminToken'));
 
   const [users, setUsers] = useState([]);
   const [rides, setRides] = useState([]);
-  const [settings, setSettings] = useState({ Car: { baseFare: 150, perKmRate: 40, driverBonus: 50 }, Bike: { baseFare: 50, perKmRate: 15, driverBonus: 20 }, Rickshaw: { baseFare: 80, perKmRate: 25, driverBonus: 30 } });
   
-  const [activeTab, setActiveTab] = useState('dashboard'); // dashboard, users, rides, settings
+  // ✨ ADDED companyCommission TO STATE!
+  const [settings, setSettings] = useState({ 
+    companyCommission: 10,
+    Car: { baseFare: 150, perKmRate: 40, driverBonus: 50 }, 
+    Bike: { baseFare: 50, perKmRate: 15, driverBonus: 20 }, 
+    Rickshaw: { baseFare: 80, perKmRate: 25, driverBonus: 30 } 
+  });
+  
+  const [isSaving, setIsSaving] = useState(false);
+  const [activeTab, setActiveTab] = useState('dashboard');
   const [userSearch, setUserSearch] = useState('');
   const [rideSearch, setRideSearch] = useState('');
-  
   const [docModalUser, setDocModalUser] = useState(null);
   const [toast, setToast] = useState({ show: false, message: '' });
 
@@ -56,12 +62,13 @@ function App() {
 
   const handleLogout = () => { setToken(null); localStorage.removeItem('adminToken'); };
 
-  // --- ADMIN ACTIONS ---
   const saveSettings = async () => {
+    setIsSaving(true);
     try {
       await axios.put(`${API_URL}/api/admin/settings`, settings, { headers: { Authorization: `Bearer ${token}` } });
       showToast("Global Pricing Updated!");
     } catch (error) { alert("Error saving settings."); }
+    setIsSaving(false);
   };
 
   const approveDriver = async (userId) => {
@@ -88,11 +95,15 @@ function App() {
     try { await axios.delete(`${API_URL}/api/admin/rides/${rideId}`, { headers: { Authorization: `Bearer ${token}` } }); showToast("Ride Log Deleted."); fetchData(); } catch (e) {}
   };
 
-  // --- ANALYTICS & SEARCH FILTERS ---
+  // --- ✨ DYNAMIC REVENUE MATH ✨ ---
   const completedRides = rides.filter(r => r.status === 'completed');
   const activeRides = rides.filter(r => r.status === 'accepted' || r.status === 'pending');
   const totalRevenue = completedRides.reduce((sum, ride) => sum + (ride.acceptedFare || 0), 0);
-  const platformCut = (totalRevenue * 0.10).toFixed(2);
+  
+  // Use the dynamic percentage from the database instead of hardcoded 10%!
+  const commissionPercentage = settings.companyCommission || 10;
+  const platformCut = (totalRevenue * (commissionPercentage / 100)).toFixed(2); 
+  
   const pendingDrivers = users.filter(u => u.activeRole === 'driver' && !u.driverProfile?.isApproved).length;
 
   const filteredUsers = users.filter(u => 
@@ -106,7 +117,6 @@ function App() {
     r.status.toLowerCase().includes(rideSearch.toLowerCase())
   );
 
-  // --- LOGIN SCREEN ---
   if (!token) {
     return (
       <div style={{ minHeight: '100vh', backgroundColor: DARK_BG, display: 'flex', justifyContent: 'center', alignItems: 'center', fontFamily: 'sans-serif' }}>
@@ -123,18 +133,15 @@ function App() {
     );
   }
 
-  // --- MAIN ADMIN LAYOUT ---
   return (
     <div style={{ display: 'flex', minHeight: '100vh', backgroundColor: DARK_BG, fontFamily: 'sans-serif', color: 'white' }}>
       
-      {/* 🚀 CUSTOM TOAST NOTIFICATION */}
       {toast.show && (
         <div style={{ position: 'fixed', top: '20px', right: '20px', backgroundColor: BRAND, color: DARK_BG, padding: '15px 25px', borderRadius: '10px', fontWeight: 'bold', zIndex: 9999, boxShadow: '0 5px 15px rgba(0,208,108,0.4)', animation: 'fadeIn 0.3s ease' }}>
           ✓ {toast.message}
         </div>
       )}
 
-      {/* 📱 SIDEBAR NAVIGATION */}
       <div style={{ width: '260px', backgroundColor: CARD_BG, borderRight: `1px solid ${BORDER}`, padding: '30px 20px', display: 'flex', flexDirection: 'column' }}>
         <h2 style={{ color: BRAND, letterSpacing: '3px', margin: '0 0 40px 10px', fontSize: '28px' }}>TAYKAR_</h2>
         
@@ -147,10 +154,8 @@ function App() {
         <button onClick={handleLogout} style={{ ...styles.navBtn, color: '#ff4757' }}>🚪 Terminate Session</button>
       </div>
 
-      {/* 🖥️ MAIN CONTENT AREA */}
       <div style={{ flex: 1, padding: '40px', overflowY: 'auto' }}>
         
-        {/* HEADER */}
         <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '40px' }}>
           <div>
             <h1 style={{ margin: 0, fontSize: '32px', fontWeight: '900' }}>{activeTab.toUpperCase()} PROTOCOL</h1>
@@ -179,7 +184,8 @@ function App() {
                 <h2 style={styles.statNumber}><span style={{ color: '#3498db' }}>{activeRides.length}</span></h2>
               </div>
               <div style={{ ...styles.statCard, borderColor: BRAND, backgroundColor: 'rgba(0,208,108,0.05)' }}>
-                <p style={{ ...styles.statLabel, color: BRAND }}>PLATFORM REVENUE</p>
+                {/* ✨ DYNAMIC COMMISSION HEADER! ✨ */}
+                <p style={{ ...styles.statLabel, color: BRAND }}>REVENUE ({commissionPercentage}%)</p>
                 <h2 style={{ ...styles.statNumber, color: BRAND }}>Rs. {platformCut}</h2>
               </div>
             </div>
@@ -307,8 +313,22 @@ function App() {
         {activeTab === 'settings' && (
           <div style={{ ...styles.tableContainer, maxWidth: '900px' }}>
             <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: '30px' }}>
-              <h2 style={{ margin: 0 }}>Global Pricing & Algorithm</h2>
-              <button onClick={saveSettings} style={styles.btnPrimary}>Save Configuration</button>
+              <h2 style={{ margin: 0 }}>Global Pricing Configuration</h2>
+              <button onClick={saveSettings} style={styles.btnPrimary}>{isSaving ? 'Saving...' : 'Save Configuration'}</button>
+            </div>
+
+            {/* ✨ NEW COMPANY COMMISSION BOX ✨ */}
+            <div style={{ backgroundColor: 'rgba(0, 208, 108, 0.05)', padding: '20px', borderRadius: '15px', border: `1px solid ${BRAND}`, marginBottom: '30px', display: 'flex', alignItems: 'center', gap: '20px' }}>
+              <div>
+                <h3 style={{ margin: '0 0 5px 0', color: 'white' }}>Platform Commission (%)</h3>
+                <p style={{ margin: 0, color: '#88929E', fontSize: '14px' }}>The percentage TayKar keeps from every completed ride.</p>
+              </div>
+              <input 
+                type="number" 
+                value={settings.companyCommission || 10} 
+                onChange={(e) => setSettings({...settings, companyCommission: Number(e.target.value)})} 
+                style={{ ...styles.inputDark, width: '100px', fontSize: '24px', fontWeight: 'bold', color: BRAND, borderColor: BRAND }} 
+              />
             </div>
 
             {['Car', 'Bike', 'Rickshaw'].map((vehicle) => (
@@ -317,17 +337,14 @@ function App() {
                   <span style={{ fontSize: '40px' }}>{vehicle === 'Car' ? '🚗' : vehicle === 'Bike' ? '🏍️' : '🛺'}</span>
                   <h3 style={{ margin: '5px 0 0 0', color: 'white' }}>{vehicle}</h3>
                 </div>
-                
                 <div style={{ flex: 1 }}>
                   <label style={styles.label}>Base Fare (Rs.)</label>
                   <input type="number" value={settings[vehicle]?.baseFare || 0} onChange={(e) => setSettings({...settings, [vehicle]: {...settings[vehicle], baseFare: Number(e.target.value)}})} style={styles.inputDark} />
                 </div>
-                
                 <div style={{ flex: 1 }}>
                   <label style={styles.label}>Per KM Rate (Rs.)</label>
                   <input type="number" value={settings[vehicle]?.perKmRate || 0} onChange={(e) => setSettings({...settings, [vehicle]: {...settings[vehicle], perKmRate: Number(e.target.value)}})} style={styles.inputDark} />
                 </div>
-
                 <div style={{ flex: 1 }}>
                   <label style={styles.label}>Driver Bonus (Rs.)</label>
                   <input type="number" value={settings[vehicle]?.driverBonus || 0} onChange={(e) => setSettings({...settings, [vehicle]: {...settings[vehicle], driverBonus: Number(e.target.value)}})} style={styles.inputDark} />
@@ -368,24 +385,19 @@ function App() {
           </div>
         </div>
       )}
-
     </div>
   );
 }
 
-// --- CSS IN JS OBJECTS ---
 const styles = {
   input: { padding: '15px', borderRadius: '10px', border: `1px solid ${BORDER}`, backgroundColor: DARK_BG, color: 'white', fontSize: '16px', outline: 'none' },
   inputDark: { width: '100%', padding: '12px', borderRadius: '8px', border: `1px solid ${BORDER}`, backgroundColor: CARD_BG, color: 'white', fontSize: '16px', outline: 'none', marginTop: '8px' },
   label: { color: '#88929E', fontSize: '12px', fontWeight: 'bold', letterSpacing: '1px' },
-  
   navBtn: { padding: '15px', backgroundColor: 'transparent', color: '#88929E', border: 'none', textAlign: 'left', fontSize: '16px', cursor: 'pointer', borderRadius: '10px', marginBottom: '5px', fontWeight: '600', transition: 'all 0.2s' },
   navBtnActive: { padding: '15px', backgroundColor: 'rgba(0, 208, 108, 0.1)', color: BRAND, border: `1px solid ${BRAND}`, textAlign: 'left', fontSize: '16px', cursor: 'pointer', borderRadius: '10px', marginBottom: '5px', fontWeight: 'bold' },
-  
   statCard: { backgroundColor: CARD_BG, padding: '25px', borderRadius: '15px', border: `1px solid ${BORDER}` },
   statLabel: { margin: '0 0 10px 0', color: '#88929E', fontSize: '12px', fontWeight: 'bold', letterSpacing: '1px' },
   statNumber: { margin: 0, fontSize: '40px', color: 'white', fontWeight: '900' },
-  
   tableContainer: { backgroundColor: CARD_BG, padding: '30px', borderRadius: '20px', border: `1px solid ${BORDER}` },
   searchInput: { padding: '10px 20px', borderRadius: '10px', border: `1px solid ${BORDER}`, backgroundColor: DARK_BG, color: 'white', width: '300px', outline: 'none' },
   table: { width: '100%', textAlign: 'left', borderCollapse: 'collapse' },
@@ -393,16 +405,13 @@ const styles = {
   th: { padding: '15px 10px', color: '#88929E', fontSize: '12px', fontWeight: 'bold', letterSpacing: '1px' },
   trBody: { borderBottom: `1px solid ${BORDER}` },
   td: { padding: '15px 10px', color: '#E1E7EF' },
-  
   btnPrimary: { padding: '12px 20px', backgroundColor: BRAND, color: DARK_BG, border: 'none', borderRadius: '8px', cursor: 'pointer', fontWeight: '900', letterSpacing: '1px' },
   btnSuccess: { padding: '6px 12px', backgroundColor: BRAND, color: DARK_BG, border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' },
   btnInfo: { padding: '6px 12px', backgroundColor: '#3498db', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' },
   btnWarning: { padding: '6px 12px', backgroundColor: '#f39c12', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' },
   btnDanger: { padding: '6px 12px', backgroundColor: '#ff4757', color: 'white', border: 'none', borderRadius: '5px', cursor: 'pointer', fontSize: '12px', fontWeight: 'bold' },
-  
   badgeSuccess: { backgroundColor: 'rgba(0, 208, 108, 0.1)', color: BRAND, padding: '5px 10px', borderRadius: '10px', fontSize: '12px', fontWeight: 'bold', display: 'inline-block' },
   badgeWarning: { backgroundColor: 'rgba(243, 156, 18, 0.1)', color: '#f39c12', padding: '5px 10px', borderRadius: '10px', fontSize: '12px', fontWeight: 'bold', display: 'inline-block' },
-
   imgBox: { backgroundColor: DARK_BG, padding: '15px', borderRadius: '15px', border: `1px solid ${BORDER}`, textAlign: 'center' },
   imgTitle: { color: '#88929E', fontSize: '14px', marginTop: 0, marginBottom: '15px' },
   docImage: { width: '100%', maxHeight: '250px', objectFit: 'contain', borderRadius: '10px' }
