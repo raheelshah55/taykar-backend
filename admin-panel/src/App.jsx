@@ -1,7 +1,7 @@
 import { useState, useEffect } from 'react';
 import axios from 'axios';
 
-const API_URL = 'http://localhost:5000'; // Change to Render URL when deploying to Vercel!
+const API_URL = 'https://taykar-backend.onrender.com'; 
 
 function App() {
   const [email, setEmail] = useState('ali@test.com');
