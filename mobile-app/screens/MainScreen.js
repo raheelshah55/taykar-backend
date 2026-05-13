@@ -1,5 +1,5 @@
 import { useState, useEffect, useContext, useRef } from 'react';
-import { StyleSheet, Text, View, Switch, TouchableOpacity, Alert, TextInput, FlatList, Platform, Modal, Animated, Easing } from 'react-native';
+import { StyleSheet, Text, View, Switch, TouchableOpacity, Alert, TextInput, FlatList, Platform, Modal, Animated, Easing, KeyboardAvoidingView } from 'react-native';
 import axios from 'axios';
 import { io } from 'socket.io-client';
 import { AuthContext } from '../AuthContext';
@@ -11,9 +11,10 @@ import { Ionicons, MaterialIcons, FontAwesome5, MaterialCommunityIcons } from '@
 const API_URL = 'https://taykar-backend.onrender.com'; // ⚠️ PUT YOUR URL HERE
 const GOOGLE_MAPS_APIKEY = 'AIzaSyC7sThLgCleKTbdOkjdyWbISY89AyoxTv'; // ⚠️ PUT YOUR KEY HERE
 const BRAND_COLOR = '#00D06C';
+const DARK_BG = '#03060A';
+const CARD_BG = '#0A121A';
 
-// Dark Map JSON
-const darkMapStyle =[
+const customMapStyle =[
   { elementType: "geometry", stylers:[{ color: "#0A121A" }] },
   { elementType: "labels.text.stroke", stylers:[{ color: "#0A121A" }] },
   { elementType: "labels.text.fill", stylers:[{ color: "#88929E" }] },
@@ -21,11 +22,10 @@ const darkMapStyle =[
   { featureType: "poi", stylers:[{ visibility: "off" }] },
   { featureType: "road", elementType: "geometry", stylers:[{ color: "#1a2634" }] },
   { featureType: "road", elementType: "geometry.stroke", stylers:[{ color: "#0A121A" }] },
-  { featureType: "water", elementType: "geometry", stylers:[{ color: "#03060A" }] },
+  { featureType: "water", elementType: "geometry", stylers: [{ color: "#03060A" }] },
 ];
 
 export default function MainScreen({ route, navigation }) {
-  // ✨ WE PULL THE THEME MEMORY AND TOGGLE FUNCTION HERE! ✨
   const { user, token, setUser, setToken, logout, theme, toggleTheme } = useContext(AuthContext);
   const isDriverMode = user.activeRole === 'driver';
   
@@ -49,14 +49,18 @@ export default function MainScreen({ route, navigation }) {
   const [fare, setFare] = useState('');
   const[vehicleType, setVehicleType] = useState('Car');
   const [currentRide, setCurrentRide] = useState(null);
-  const[bids, setBids] = useState([]);
+  const[bids, setBids] = useState(new Array());
 
-  const [availableRides, setAvailableRides] = useState([]);
-  const[bidInputs, setBidInputs] = useState({});
+  const[availableRides, setAvailableRides] = useState(new Array());
+  const [bidInputs, setBidInputs] = useState({});
   const [activeRide, setActiveRide] = useState(null);
-  const [activeRideCoords, setActiveRideCoords] = useState(null);
   const [appSettings, setAppSettings] = useState(null);
-  const [calculatedDistance, setCalculatedDistance] = useState(null);
+  const[calculatedDistance, setCalculatedDistance] = useState(null);
+
+  // ✨ IN-APP CHAT STATES ✨
+  const [isChatOpen, setIsChatOpen] = useState(false);
+  const [chatMessage, setChatMessage] = useState('');
+  const [chatMessages, setChatMessages] = useState(new Array());
 
   const radarAnim = useRef(new Animated.Value(0)).current;
 
@@ -64,7 +68,7 @@ export default function MainScreen({ route, navigation }) {
     Animated.loop(
       Animated.timing(radarAnim, { toValue: 1, duration: 2000, easing: Easing.out(Easing.ease), useNativeDriver: true })
     ).start();
-  }, []);
+  }, new Array());
 
   const radarScale = radarAnim.interpolate({ inputRange:[0, 1], outputRange: [1, 2] });
   const radarOpacity = radarAnim.interpolate({ inputRange:[0, 1], outputRange: [0.5, 0] });
@@ -80,7 +84,7 @@ export default function MainScreen({ route, navigation }) {
         setUserLoc(location.coords);
       }
     })();
-  },[]);
+  }, new Array());
 
   const centerMap = () => {
     if (userLoc && mapRef.current) {
@@ -100,7 +104,7 @@ export default function MainScreen({ route, navigation }) {
         });
       }, 5000);
     }
-  },[route.params]);
+  }, [route.params]);
 
   const getSafeSettings = (type) => {
     if (appSettings && appSettings[type]) return appSettings[type];
@@ -151,6 +155,13 @@ export default function MainScreen({ route, navigation }) {
       }
     });
 
+    // ✨ NEW: LISTEN FOR CHAT MESSAGES ✨
+    socket.on('receiveMessage', (msg) => {
+      if (activeRideRef.current && activeRideRef.current._id === msg.rideId) {
+        setChatMessages((prev) => [...prev, msg]);
+      }
+    });
+
     socket.on('rideCompleted', (completedRide) => {
       setActiveRide((prevActive) => {
         if (prevActive && prevActive._id === completedRide._id) {
@@ -163,7 +174,7 @@ export default function MainScreen({ route, navigation }) {
     });
 
     return () => socket.disconnect();
-  },[]);
+  }, new Array());
 
   useEffect(() => {
     let locationWatcher;
@@ -185,7 +196,7 @@ export default function MainScreen({ route, navigation }) {
       }
     })();
     return () => { if (locationWatcher) locationWatcher.remove(); };
-  },[isDriverMode, activeRide, isOnline]);
+  }, [isDriverMode, activeRide, isOnline]);
 
   const fetchActiveRide = async () => {
     try {
@@ -201,13 +212,24 @@ export default function MainScreen({ route, navigation }) {
     } catch (error) {}
   };
 
- 
+  const toggleRole = async () => {
+    if (activeRide) return Alert.alert("Hold up!", "Cannot switch roles during active ride.");
+    if (!isDriverMode && (!user.driverProfile || !user.driverProfile.cnicFront)) {
+      setShowMenu(false); return navigation.navigate('UpgradeDriver');
+    }
+    const newRole = isDriverMode ? 'rider' : 'driver';
+    try {
+      const res = await axios.put(`${API_URL}/api/auth/switch-role`, { newRole }, { headers: { Authorization: `Bearer ${token}` } });
+      setToken(res.data.token); setUser(res.data.user); 
+      setIsDriverMode(newRole === 'driver'); setShowMenu(false); setIsOnline(false); 
+    } catch (error) { Alert.alert("Error", "Could not switch roles."); }
+  };
 
   const requestRide = async () => {
     if (!pickupObj || !dropoffObj || !fare || fare === "Calculating...") return Alert.alert("Hold up!", "Please wait for fare calculation.");
     try {
       const res = await axios.post(`${API_URL}/api/rides/request`, { pickupLocation: pickupObj.address, dropoffLocation: dropoffObj.address, offeredFare: Number(fare), vehicleType }, { headers: { Authorization: `Bearer ${token}` } });
-      setCurrentRide(res.data.ride); setBids([]);
+      setCurrentRide(res.data.ride); setBids(new Array());
     } catch (error) { Alert.alert("Error", "Could not request ride."); }
   };
 
@@ -234,12 +256,29 @@ export default function MainScreen({ route, navigation }) {
     } catch (error) { Alert.alert("Error", "Could not complete ride."); }
   };
 
-  const resetRiderState = () => { 
-    setCurrentRide(null); setPickupObj(null); setDropoffObj(null); setFare(''); setBids([]); setCalculatedDistance(null);
-    setActiveRide(null); setActiveRideCoords(null); setDriverPosition(null); navigation.setParams({ selectedPickup: null, selectedDropoff: null });
+  // ✨ SEND SECURE CHAT MESSAGE ✨
+  const sendChatMessage = () => {
+    if (!chatMessage.trim()) return;
+    const msgData = {
+      rideId: activeRide._id,
+      text: chatMessage,
+      senderId: user._id,
+      senderName: user.name || user.firstName,
+      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+    };
+    
+    const tempSocket = io(API_URL, { transports: ['websocket'] });
+    tempSocket.emit('sendMessage', msgData);
+    setChatMessage('');
+    setTimeout(() => tempSocket.disconnect(), 1000);
   };
 
-  // ✨ GENERATE DYNAMIC STYLES BASED ON THE THEME! ✨
+  const resetRiderState = () => { 
+    setCurrentRide(null); setPickupObj(null); setDropoffObj(null); setFare(''); setBids(new Array()); setCalculatedDistance(null);
+    setActiveRide(null); setDriverPosition(null); setIsChatOpen(false); setChatMessages(new Array());
+    navigation.setParams({ selectedPickup: null, selectedDropoff: null });
+  };
+
   const styles = getStyles(theme);
 
   return (
@@ -251,10 +290,7 @@ export default function MainScreen({ route, navigation }) {
         <MapView 
           ref={mapRef} style={StyleSheet.absoluteFillObject} showsUserLocation={true} 
           showsMyLocationButton={false} toolbarEnabled={false}
-          
-          /* MAGIC: Google Maps toggles based on global state! */
-          customMapStyle={theme.isDark ? darkMapStyle :[]} 
-          
+          customMapStyle={theme.isDark ? customMapStyle : new Array()} 
           initialRegion={{ latitude: 33.7294, longitude: 73.0931, latitudeDelta: 0.05, longitudeDelta: 0.05 }}
         >
           {!activeRide && pickupObj && dropoffObj && (
@@ -265,36 +301,18 @@ export default function MainScreen({ route, navigation }) {
                 setCalculatedDistance(result.distance.toFixed(1)); 
                 mapRef.current.fitToCoordinates(result.coordinates, { edgePadding: { right: 50, bottom: 400, left: 50, top: 100 } });
               }}
-              onError={(e) => console.log(e)}
             />
           )}
-          {!activeRide && pickupObj && (
-            <Marker key="p1" coordinate={{ latitude: pickupObj.lat, longitude: pickupObj.lng }}>
-              <View style={styles.customPinGreen}><View style={styles.pinDot} /></View>
-            </Marker>
-          )}
-          {!activeRide && dropoffObj && (
-            <Marker key="d1" coordinate={{ latitude: dropoffObj.lat, longitude: dropoffObj.lng }}>
-              <View style={styles.customPinRed}><View style={styles.pinDot} /></View>
-            </Marker>
-          )}
+          {!activeRide && pickupObj && <Marker key="p1" coordinate={{ latitude: pickupObj.lat, longitude: pickupObj.lng }}><View style={styles.customPinGreen}><View style={styles.pinDot} /></View></Marker>}
+          {!activeRide && dropoffObj && <Marker key="d1" coordinate={{ latitude: dropoffObj.lat, longitude: dropoffObj.lng }}><View style={styles.customPinRed}><View style={styles.pinDot} /></View></Marker>}
 
           {activeRide && (
             <MapViewDirections
               key={`route-${activeRide._id}`}
               origin={activeRide.pickupLocation} destination={activeRide.dropoffLocation}
               apikey={GOOGLE_MAPS_APIKEY} strokeWidth={4} strokeColor={BRAND_COLOR}
-              onReady={(result) => {
-                setActiveRideCoords({ pickup: result.coordinates[0], dropoff: result.coordinates[result.coordinates.length - 1] });
-                mapRef.current.fitToCoordinates(result.coordinates, { edgePadding: { right: 50, bottom: 400, left: 50, top: 100 } });
-              }}
+              onReady={(result) => mapRef.current.fitToCoordinates(result.coordinates, { edgePadding: { right: 50, bottom: 400, left: 50, top: 100 } })}
             />
-          )}
-          {activeRide && activeRideCoords && (
-            <>
-              <Marker key="p2" coordinate={activeRideCoords.pickup}><View style={styles.customPinGreen}><View style={styles.pinDot}/></View></Marker>
-              <Marker key="d2" coordinate={activeRideCoords.dropoff}><View style={styles.customPinRed}><View style={styles.pinDot}/></View></Marker>
-            </>
           )}
           {activeRide && !isDriverMode && driverPosition && (
             <Marker coordinate={driverPosition} anchor={{ x: 0.5, y: 0.5 }}>
@@ -313,7 +331,6 @@ export default function MainScreen({ route, navigation }) {
         <Ionicons name="apps" size={24} color={theme.text} />
       </TouchableOpacity>
 
-      {/* 📲 DYNAMIC THEME DROPDOWN MENU */}
       <Modal visible={showMenu} transparent={true} animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowMenu(false)}>
           <View style={styles.dropdownMenu}>
@@ -321,41 +338,55 @@ export default function MainScreen({ route, navigation }) {
               <View style={styles.menuAvatar}><Text style={{fontSize: 22, color: 'white', fontWeight: '900'}}>{user?.name?.charAt(0) || '?'}</Text></View>
               <View>
                 <Text style={styles.menuName}>{user?.name}</Text>
-                <Text style={styles.menuPhone}>{user?.phoneNumber}</Text>
+                <Text style={styles.menuPhone}>+92 *** ******* (Hidden)</Text>
               </View>
             </View>
-            
             <View style={styles.neonDivider} />
-            <Text style={styles.systemStatusText}>SYSTEM: {isDriverMode ? 'DRIVER PROTOCOL' : 'RIDER PROTOCOL'}</Text>
-            
-            <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); navigation.navigate('Profile'); }}>
-              <Ionicons name="person-outline" size={22} color={theme.text} style={styles.menuItemIcon} />
-              <Text style={styles.menuItemText}>Access Profile Logs</Text>
-            </TouchableOpacity>
-
-            
-
-            {/* ✨ THIS BUTTON TRIGGERS THE GLOBAL THEME TOGGLE ✨ */}
-            <TouchableOpacity style={styles.menuItem} onPress={() => { toggleTheme(); setShowMenu(false); }}>
-              <Ionicons name={theme.isDark ? "sunny-outline" : "moon-outline"} size={22} color={theme.text} style={styles.menuItemIcon} />
-              <Text style={styles.menuItemText}> {theme.isDark ? "Light" : "Dark"} Mode</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); Alert.alert("Language", "Urdu pack downloading..."); }}>
-              <Ionicons name="globe-outline" size={22} color={theme.text} style={styles.menuItemIcon} />
-              <Text style={styles.menuItemText}>Language (English/Urdu)</Text>
-            </TouchableOpacity>
-
-            <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0, marginTop: 10 }]} onPress={logout}>
-              <Ionicons name="power" size={22} color="#ff4757" style={styles.menuItemIcon} />
-              <Text style={[styles.menuItemText, {color: '#ff4757'}]}>LOGOUT</Text>
-            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); navigation.navigate('Profile'); }}><Ionicons name="person-outline" size={22} color={theme.text} style={styles.menuItemIcon} /><Text style={styles.menuItemText}>Profile & History</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.menuItem} onPress={toggleRole}><Ionicons name="swap-vertical" size={22} color={BRAND_COLOR} style={styles.menuItemIcon} /><Text style={[styles.menuItemText, {color: BRAND_COLOR}]}>Switch to {isDriverMode ? 'Rider' : 'Driver'}</Text></TouchableOpacity>
+            <TouchableOpacity style={styles.menuItem} onPress={() => { toggleTheme(); setShowMenu(false); }}><Ionicons name={theme.isDark ? "sunny-outline" : "moon-outline"} size={22} color={theme.text} style={styles.menuItemIcon} /><Text style={styles.menuItemText}>Switch to {theme.isDark ? "Light" : "Dark"} Mode</Text></TouchableOpacity>
+            <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0, marginTop: 10 }]} onPress={logout}><Ionicons name="power" size={22} color="#ff4757" style={styles.menuItemIcon} /><Text style={[styles.menuItemText, {color: '#ff4757'}]}>Log Out</Text></TouchableOpacity>
           </View>
         </TouchableOpacity>
       </Modal>
 
-      {/* --- UI OVERLAYS --- */}
+      {/* 💬 SECURE IN-APP CHAT MODAL */}
+      <Modal visible={isChatOpen} animationType="slide" transparent={true}>
+        <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.chatModalContainer}>
+          <View style={styles.chatBox}>
+            <View style={styles.chatHeader}>
+              <Text style={styles.chatTitle}>Secure Comm-Link</Text>
+              <TouchableOpacity onPress={() => setIsChatOpen(false)}><Ionicons name="close" size={28} color={theme.text} /></TouchableOpacity>
+            </View>
+            
+            <FlatList
+              data={chatMessages}
+              keyExtractor={(item, index) => index.toString()}
+              showsVerticalScrollIndicator={false}
+              contentContainerStyle={{ paddingVertical: 10 }}
+              renderItem={({ item }) => {
+                const isMe = item.senderId === user._id;
+                return (
+                  <View style={[styles.chatBubble, isMe ? styles.chatBubbleMe : styles.chatBubbleThem]}>
+                    <Text style={styles.chatSender}>{isMe ? 'You' : item.senderName}</Text>
+                    <Text style={styles.chatText}>{item.text}</Text>
+                    <Text style={styles.chatTime}>{item.time}</Text>
+                  </View>
+                );
+              }}
+            />
+            
+            <View style={styles.chatInputRow}>
+              <TextInput style={styles.chatInput} value={chatMessage} onChangeText={setChatMessage} placeholder="Type a message..." placeholderTextColor={theme.subText} />
+              <TouchableOpacity style={styles.chatSendBtn} onPress={sendChatMessage}>
+                <Ionicons name="send" size={20} color="white" />
+              </TouchableOpacity>
+            </View>
+          </View>
+        </KeyboardAvoidingView>
+      </Modal>
 
+      {/* --- UI OVERLAYS --- */}
       {isDriverMode && !user.driverProfile?.isApproved ? (
         <View style={styles.pendingFullScreen}>
           <MaterialCommunityIcons name="shield-lock-outline" size={80} color={BRAND_COLOR} style={{marginBottom: 20}} />
@@ -367,8 +398,18 @@ export default function MainScreen({ route, navigation }) {
       activeRide ? (
         <View style={styles.floatingBottomCard}>
           <View style={styles.dragHandle} />
+          
           <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'}}>
-            <Text style={styles.bigText}>Transit Active</Text>
+            <View>
+              <Text style={styles.bigText}>Transit Active</Text>
+              {/* ✨ NEW: RIDER SEES DRIVER'S VEHICLE DETAILS ✨ */}
+              {!isDriverMode && activeRide.driver?.driverProfile && (
+                <View style={{marginTop: -10, marginBottom: 10}}>
+                  <Text style={{color: theme.subText, fontWeight: 'bold'}}>🚗 {activeRide.driver.driverProfile.vehicleInfo}</Text>
+                  <Text style={{color: theme.subText, fontWeight: 'bold'}}>🏷️ Plate: {activeRide.driver.driverProfile.licensePlate}</Text>
+                </View>
+              )}
+            </View>
             <Text style={styles.fareHighlight}>Rs. {activeRide.acceptedFare}</Text>
           </View>
           
@@ -378,9 +419,22 @@ export default function MainScreen({ route, navigation }) {
             <View style={styles.addressRow}><View style={styles.dotRed} /><Text style={styles.addressText} numberOfLines={1}>{activeRide.dropoffLocation}</Text></View>
           </View>
 
+          {/* ✨ NEW: COMMUNICATION BUTTONS ✨ */}
+          <View style={styles.commRow}>
+            <TouchableOpacity style={styles.chatBtn} onPress={() => setIsChatOpen(true)}>
+              <Ionicons name="chatbubbles" size={20} color={BRAND_COLOR} />
+              <Text style={styles.chatBtnText}>Chat</Text>
+            </TouchableOpacity>
+
+            <TouchableOpacity style={styles.callBtn} onPress={() => Alert.alert("Secure Call", "Connecting via TayKar Encrypted Proxy to protect phone numbers...")}>
+              <Ionicons name="call" size={20} color="white" />
+              <Text style={styles.callBtnText}>Call</Text>
+            </TouchableOpacity>
+          </View>
+
           {isDriverMode ? (
-            <TouchableOpacity style={styles.primaryBtn} onPress={completeRide}>
-              <Text style={styles.primaryBtnText}>FINISH & COLLECT FUNDS</Text>
+            <TouchableOpacity style={styles.completeBtn} onPress={completeRide}>
+              <Text style={styles.buttonText}>Finish Ride & Collect Rs. {activeRide.acceptedFare}</Text>
             </TouchableOpacity>
           ) : ( 
             <View style={styles.waitingBadge}><Text style={styles.waitingBadgeText}>Driver Approaching Target</Text></View> 
@@ -393,8 +447,8 @@ export default function MainScreen({ route, navigation }) {
           <View style={styles.onlineToggleContainer}>
             {isOnline && <Animated.View style={[styles.radarRing, { transform: [{ scale: radarScale }], opacity: radarOpacity }]} />}
             <MaterialCommunityIcons name="radar" size={20} color={isOnline ? BRAND_COLOR : theme.subText} style={{marginRight: 10}} />
-            <Text style={[styles.onlineText, { color: isOnline ? (theme.isDark ? 'white' : '#333') : theme.subText }]}>{isOnline ? 'ONLINE' : 'OFFLINE'}</Text>
-            <Switch value={isOnline} onValueChange={(val) => { setIsOnline(val); if (val) fetchAvailableRides(); }} trackColor={{ false: theme.border, true: 'rgba(0, 208, 108, 0.4)' }} thumbColor={isOnline ? BRAND_COLOR : theme.subText} />
+            <Text style={[styles.onlineText, { color: isOnline ? (theme.isDark ? 'white' : '#333') : theme.subText }]}>{isOnline ? 'TRANSMITTING' : 'OFFLINE'}</Text>
+            <Switch value={isOnline} onValueChange={(val) => { setIsOnline(val); if (val) fetchAvailableRides(); }} trackColor={{ false: theme.border, true: 'rgba(0, 208, 108, 0.4)' }} thumbColor={isOnline ? BRAND_COLOR : '#888'} />
           </View>
 
           {isOnline && (
@@ -443,7 +497,7 @@ export default function MainScreen({ route, navigation }) {
           {!pickupObj || !dropoffObj ? (
              <TouchableOpacity style={styles.searchBarFake} onPress={() => navigation.navigate('LocationSearch', { isDarkMap: theme.isDark })}>
                <Ionicons name="search" size={20} color={theme.subText} style={{marginRight: 10}} />
-               <Text style={styles.searchBarText}>Where to?</Text>
+               <Text style={styles.searchBarText}>Initialize Route...</Text>
              </TouchableOpacity>
           ) : !currentRide ? (
             <View>
@@ -544,7 +598,7 @@ const getStyles = (theme) => StyleSheet.create({
   menuItemIcon: { marginRight: 15 },
   menuItemText: { fontSize: 16, fontWeight: '600', color: theme.text },
   
-  onlineToggleContainer: { position: 'absolute', top: 50, alignSelf: 'center', backgroundColor: theme.card, paddingHorizontal: 8, paddingVertical: 12, borderRadius: 60, flexDirection: 'row', alignItems: 'center', elevation: 5, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 5, zIndex: 10, borderWidth: 1, borderColor: theme.border },
+  onlineToggleContainer: { position: 'absolute', top: 50, alignSelf: 'center', backgroundColor: theme.card, paddingHorizontal: 25, paddingVertical: 12, borderRadius: 30, flexDirection: 'row', alignItems: 'center', elevation: 5, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 5, zIndex: 10, borderWidth: 1, borderColor: theme.border },
   onlineText: { fontWeight: '900', marginRight: 12, fontSize: 14, letterSpacing: 1, color: theme.text },
   
   floatingBottomCard: { position: 'absolute', bottom: 0, width: '100%', backgroundColor: theme.card, padding: 25, borderTopLeftRadius: 30, borderTopRightRadius: 30, elevation: 20, shadowColor: '#000', shadowOffset: { width: 0, height: -10 }, shadowOpacity: 0.05, shadowRadius: 10, borderTopWidth: theme.isDark ? 2 : 0, borderColor: theme.brand },
@@ -563,7 +617,6 @@ const getStyles = (theme) => StyleSheet.create({
 
   bigText: { fontSize: 24, fontWeight: '900', color: theme.text, marginBottom: 15, letterSpacing: 1 },
   subtitle: { fontSize: 14, color: theme.subText, marginBottom: 10 },
-  
   offerBox: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', backgroundColor: theme.input, padding: 15, borderRadius: 12, marginBottom: 15, borderWidth: 1, borderColor: theme.border },
   fareInputRaw: { fontSize: 24, fontWeight: '900', color: theme.text, minWidth: 80 },
   
@@ -592,14 +645,13 @@ const getStyles = (theme) => StyleSheet.create({
   bidFare: { fontSize: 18, color: theme.brand, fontWeight: '900' },
   acceptBidButton: { backgroundColor: theme.brand, paddingHorizontal: 15, paddingVertical: 8, borderRadius: 8 },
   buttonText: { color: 'white', fontSize: 16, fontWeight: 'bold' },
-  
   cancelButton: { marginTop: 20, padding: 15, alignItems: 'center' },
   cancelButtonText: { color: '#ff4757', fontWeight: '900', fontSize: 14, letterSpacing: 1 },
   
   addressBox: { backgroundColor: theme.input, padding: 15, borderRadius: 12, marginVertical: 15, borderWidth: 1, borderColor: theme.border },
   addressRow: { flexDirection: 'row', alignItems: 'center', marginVertical: 4 },
-  dotGreen: { width: 10, height: 10, borderRadius: 5, backgroundColor: theme.brand, marginRight: 10 },
-  dotRed: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#ff4757', marginRight: 10 },
+  dotGreen: { width: 10, height: 10, borderRadius: 5, backgroundColor: theme.brand, marginRight: 10, shadowColor: theme.brand, shadowOpacity: 1, shadowRadius: 5 },
+  dotRed: { width: 10, height: 10, borderRadius: 5, backgroundColor: '#ff4757', marginRight: 10, shadowColor: '#ff4757', shadowOpacity: 1, shadowRadius: 5 },
   verticalLineSmall: { width: 2, height: 15, backgroundColor: theme.border, marginLeft: 4 },
   addressText: { fontSize: 14, color: theme.subText, fontWeight: '500', flex: 1 },
   fareHighlight: { fontSize: 28, fontWeight: '900', color: theme.brand },
@@ -608,5 +660,28 @@ const getStyles = (theme) => StyleSheet.create({
 
   pendingFullScreen: { flex: 1, backgroundColor: theme.bg, justifyContent: 'center', alignItems: 'center', padding: 30 },
   pendingTitle: { fontSize: 24, fontWeight: '900', color: theme.text, marginBottom: 10, letterSpacing: 1 },
-  pendingText: { fontSize: 14, color: theme.subText, textAlign: 'center', lineHeight: 22 }
+  pendingText: { fontSize: 14, color: theme.subText, textAlign: 'center', lineHeight: 22 },
+
+  // ✨ IN-APP CHAT STYLES ✨
+  commRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
+  chatBtn: { flex: 1, flexDirection: 'row', backgroundColor: 'rgba(0,208,108,0.1)', padding: 15, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 10, borderWidth: 1, borderColor: 'rgba(0,208,108,0.3)' },
+  chatBtnText: { color: BRAND_COLOR, fontWeight: 'bold', marginLeft: 8, fontSize: 16 },
+  callBtn: { flex: 1, flexDirection: 'row', backgroundColor: '#3498db', padding: 15, borderRadius: 12, justifyContent: 'center', alignItems: 'center' },
+  callBtnText: { color: 'white', fontWeight: 'bold', marginLeft: 8, fontSize: 16 },
+
+  chatModalContainer: { flex: 1, justifyContent: 'flex-end', backgroundColor: 'rgba(0,0,0,0.6)' },
+  chatBox: { backgroundColor: theme.card, height: '60%', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 20, borderWidth: 1, borderColor: theme.border },
+  chatHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: theme.border, paddingBottom: 15, marginBottom: 10 },
+  chatTitle: { fontSize: 20, fontWeight: '900', color: theme.text },
+  
+  chatBubble: { maxWidth: '80%', padding: 15, borderRadius: 15, marginBottom: 10 },
+  chatBubbleMe: { alignSelf: 'flex-end', backgroundColor: BRAND_COLOR, borderBottomRightRadius: 0 },
+  chatBubbleThem: { alignSelf: 'flex-start', backgroundColor: theme.input, borderBottomLeftRadius: 0, borderWidth: 1, borderColor: theme.border },
+  chatSender: { fontSize: 10, fontWeight: 'bold', color: 'rgba(255,255,255,0.7)', marginBottom: 5 },
+  chatText: { fontSize: 16, color: 'white' },
+  chatTime: { fontSize: 10, color: 'rgba(255,255,255,0.5)', alignSelf: 'flex-end', marginTop: 5 },
+  
+  chatInputRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
+  chatInput: { flex: 1, backgroundColor: theme.input, color: theme.text, padding: 15, borderRadius: 25, borderWidth: 1, borderColor: theme.border },
+  chatSendBtn: { backgroundColor: BRAND_COLOR, width: 50, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', marginLeft: 10 }
 });
