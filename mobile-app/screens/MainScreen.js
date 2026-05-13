@@ -6,7 +6,7 @@ import { AuthContext } from '../AuthContext';
 import MapView, { Marker, Polyline } from 'react-native-maps';
 import MapViewDirections from 'react-native-maps-directions';
 import * as Location from 'expo-location';
-import { Ionicons, MaterialIcons, FontAwesome5, MaterialCommunityIcons } from '@expo/vector-icons';
+import { Ionicons, MaterialIcons, FontAwesome5, MaterialCommunityIcons, FontAwesome } from '@expo/vector-icons'; // ✨ Added FontAwesome for Stars
 
 const API_URL = 'https://taykar-backend.onrender.com'; // ⚠️ PUT YOUR URL HERE
 const GOOGLE_MAPS_APIKEY = 'AIzaSyC7sThLgCleKTbdOkjdyWbISY89AyoxTv'; // ⚠️ PUT YOUR KEY HERE
@@ -30,7 +30,7 @@ export default function MainScreen({ route, navigation }) {
   const isDriverMode = user.activeRole === 'driver';
   
   const [showMenu, setShowMenu] = useState(false);
-  const[isOnline, setIsOnline] = useState(false);
+  const [isOnline, setIsOnline] = useState(false);
 
   const isDriverRef = useRef(isDriverMode);
   const isOnlineRef = useRef(isOnline);
@@ -45,22 +45,30 @@ export default function MainScreen({ route, navigation }) {
   const [driverPosition, setDriverPosition] = useState(null);
 
   const [pickupObj, setPickupObj] = useState(null);
-  const[dropoffObj, setDropoffObj] = useState(null);
+  const [dropoffObj, setDropoffObj] = useState(null);
   const [fare, setFare] = useState('');
-  const[vehicleType, setVehicleType] = useState('Car');
+  const [vehicleType, setVehicleType] = useState('Car');
   const [currentRide, setCurrentRide] = useState(null);
-  const[bids, setBids] = useState(new Array());
+  const [bids, setBids] = useState(new Array());
 
-  const[availableRides, setAvailableRides] = useState(new Array());
+  const [availableRides, setAvailableRides] = useState(new Array());
   const [bidInputs, setBidInputs] = useState({});
   const [activeRide, setActiveRide] = useState(null);
+  const [activeRideCoords, setActiveRideCoords] = useState(null);
   const [appSettings, setAppSettings] = useState(null);
-  const[calculatedDistance, setCalculatedDistance] = useState(null);
+  const [calculatedDistance, setCalculatedDistance] = useState(null);
 
-  // ✨ IN-APP CHAT STATES ✨
   const [isChatOpen, setIsChatOpen] = useState(false);
   const [chatMessage, setChatMessage] = useState('');
   const [chatMessages, setChatMessages] = useState(new Array());
+
+  // ✨ NEW: MODAL STATES FOR END OF RIDE ✨
+  const [showRatingModal, setShowRatingModal] = useState(false);
+  const [rideToRate, setRideToRate] = useState(null);
+  const [rating, setRating] = useState(0);
+
+  const [showCollectCash, setShowCollectCash] = useState(false);
+  const [cashToCollect, setCashToCollect] = useState(0);
 
   const radarAnim = useRef(new Animated.Value(0)).current;
 
@@ -124,6 +132,7 @@ export default function MainScreen({ route, navigation }) {
     else setFare("Calculating...");
   }, [vehicleType, calculatedDistance, appSettings]);
 
+  // --- MAIN SOCKET LISTENER ---
   useEffect(() => {
     fetchActiveRide();
     axios.get(`${API_URL}/api/admin/settings`).then(res => setAppSettings(res.data)).catch(e => {});
@@ -140,13 +149,33 @@ export default function MainScreen({ route, navigation }) {
       });
     });
 
+    // ✨ NEW: Tells the specific driver they got rejected!
+    socket.on(`bidRejected-${user._id}`, () => {
+      Alert.alert("Bid Rejected", "The rider declined your offer. You can submit a new bid!");
+    });
+
+    // ✨ NEW: Tells the specific driver they WON!
+    socket.on(`youWonTheBid-${user._id}`, () => {
+      fetchActiveRide();
+    });
+
     socket.on('newRideRequest', (newRide) => {
       if (isDriverRef.current && isOnlineRef.current) setAvailableRides((prev) => [newRide, ...prev]);
     });
 
-    socket.on('rideAccepted', (acceptedRide) => {
+   // 1. Tell all other drivers the ride is off the market
+    socket.on('rideAcceptedGlobal', (acceptedRide) => {
       setAvailableRides((prev) => prev.filter(r => r._id !== acceptedRide._id));
-      fetchActiveRide();
+    });
+
+    // 2. Tell the WINNING driver to transition to the Map!
+    socket.on(`youWonTheBid-${user._id}`, () => {
+      fetchActiveRide(); 
+    });
+
+    // 3. Tell rejected drivers they can try again
+    socket.on(`bidRejected-${user._id}`, () => {
+      Alert.alert("Bid Rejected", "The rider declined your offer. You can submit a new bid!");
     });
 
     socket.on('driverLocationUpdate', (data) => {
@@ -155,26 +184,41 @@ export default function MainScreen({ route, navigation }) {
       }
     });
 
-    // ✨ NEW: LISTEN FOR CHAT MESSAGES ✨
     socket.on('receiveMessage', (msg) => {
       if (activeRideRef.current && activeRideRef.current._id === msg.rideId) {
         setChatMessages((prev) => [...prev, msg]);
       }
     });
 
-    socket.on('rideCompleted', (completedRide) => {
-      setActiveRide((prevActive) => {
-        if (prevActive && prevActive._id === completedRide._id) {
-          Alert.alert("Mission Accomplished", "You have reached your destination.");
-          resetRiderState();
-          return null; 
-        }
-        return prevActive;
-      });
-    });
-
     return () => socket.disconnect();
   }, new Array());
+
+  // --- ✨ SECOND SOCKET FOR LIVE RIDE STATUS ✨ ---
+  useEffect(() => {
+    if (!activeRide) return;
+    const rideSocket = io(API_URL, { transports: ['websocket'] });
+
+    rideSocket.on(`rideStatusUpdate-${activeRide._id}`, (updatedRide) => {
+      if (updatedRide.status === 'completed') {
+        if (isDriverMode) {
+          // Driver gets Cash Modal
+          setCashToCollect(updatedRide.acceptedFare);
+          setShowCollectCash(true);
+        } else {
+          // Rider gets Rating Modal
+          setRideToRate(updatedRide);
+          setShowRatingModal(true);
+        }
+        // Don't reset state yet, let the modal closing handle it
+        setActiveRide(null);
+      } else {
+        // Just update the status UI (Arrived, In Progress)
+        setActiveRide(updatedRide);
+      }
+    });
+
+    return () => rideSocket.disconnect();
+  }, [activeRide?._id, isDriverMode]);
 
   useEffect(() => {
     let locationWatcher;
@@ -242,31 +286,56 @@ export default function MainScreen({ route, navigation }) {
     } catch (error) { Alert.alert("Error", "Could not send bid."); }
   };
 
+  // ✨ NEW: REJECT A BID ✨
+  const rejectBid = async (driverId) => {
+    try {
+      await axios.put(`${API_URL}/api/rides/${currentRide._id}/bid/reject`, { driverId }, { headers: { Authorization: `Bearer ${token}` } });
+    } catch (error) { Alert.alert("Error", "Could not reject bid."); }
+  };
+
   const acceptBid = async (bid) => {
     try {
-      await axios.put(`${API_URL}/api/rides/${currentRideRef.current._id}/accept`, { driverId: bid.driverId, acceptedFare: bid.fare }, { headers: { Authorization: `Bearer ${token}` } });
+      await axios.put(`${API_URL}/api/rides/${currentRideRef.current._id}/accept`, { 
+        driverId: bid.driverId, 
+        acceptedFare: bid.fare 
+      }, { headers: { Authorization: `Bearer ${token}` } });
+      
+      // ✨ THE FIX: Instantly fetch the active ride to force the Rider's screen to transition!
+      fetchActiveRide(); 
+
     } catch (error) { Alert.alert("Error", "Could not accept driver."); }
   };
-
-  const completeRide = async () => {
+  // ✨ NEW: DRIVER UPDATES STATUS (Arrived, In Progress, Completed) ✨
+  const updateRideStatus = async (status) => {
     try {
-      await axios.put(`${API_URL}/api/rides/${activeRideRef.current._id}/complete`, {}, { headers: { Authorization: `Bearer ${token}` } });
-      resetRiderState();
-      if (isOnlineRef.current) fetchAvailableRides();
-    } catch (error) { Alert.alert("Error", "Could not complete ride."); }
+      await axios.put(`${API_URL}/api/rides/${activeRide._id}/status`, { status }, { headers: { Authorization: `Bearer ${token}` } });
+      if (status === 'completed') {
+         setCashToCollect(activeRide.acceptedFare);
+         setShowCollectCash(true);
+         setActiveRide(null);
+      } else {
+         setActiveRide({ ...activeRide, status }); // Local update just to be fast
+      }
+    } catch (error) { Alert.alert("Error", "Could not update ride status."); }
   };
 
-  // ✨ SEND SECURE CHAT MESSAGE ✨
+  // ✨ NEW: SUBMIT RATING ✨
+  const submitRating = async () => {
+    try {
+      await axios.post(`${API_URL}/api/rides/${rideToRate._id}/rate`, { rating }, { headers: { Authorization: `Bearer ${token}` } });
+      setShowRatingModal(false);
+      setRideToRate(null);
+      resetRiderState();
+      Alert.alert("Thank You!", "Your feedback helps keep TayKar safe.");
+    } catch (error) { Alert.alert("Error", "Could not submit rating."); }
+  };
+
   const sendChatMessage = () => {
     if (!chatMessage.trim()) return;
     const msgData = {
-      rideId: activeRide._id,
-      text: chatMessage,
-      senderId: user._id,
-      senderName: user.name || user.firstName,
-      time: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })
+      rideId: activeRide._id, text: chatMessage, senderId: user._id, senderName: user.name || user.firstName,
+      time: new Date().toLocaleTimeString(new Array(), { hour: '2-digit', minute: '2-digit' })
     };
-    
     const tempSocket = io(API_URL, { transports: ['websocket'] });
     tempSocket.emit('sendMessage', msgData);
     setChatMessage('');
@@ -275,7 +344,7 @@ export default function MainScreen({ route, navigation }) {
 
   const resetRiderState = () => { 
     setCurrentRide(null); setPickupObj(null); setDropoffObj(null); setFare(''); setBids(new Array()); setCalculatedDistance(null);
-    setActiveRide(null); setDriverPosition(null); setIsChatOpen(false); setChatMessages(new Array());
+    setActiveRide(null); setActiveRideCoords(null); setDriverPosition(null); setIsChatOpen(false); setChatMessages(new Array());
     navigation.setParams({ selectedPickup: null, selectedDropoff: null });
   };
 
@@ -283,14 +352,13 @@ export default function MainScreen({ route, navigation }) {
 
   return (
     <View style={styles.container}>
-      {/* 🗺️ MAP */}
       {Platform.OS === 'web' ? (
         <View style={styles.mapFallback}><Text style={{color: theme.text}}>Maps require physical phone</Text></View>
       ) : (
         <MapView 
           ref={mapRef} style={StyleSheet.absoluteFillObject} showsUserLocation={true} 
           showsMyLocationButton={false} toolbarEnabled={false}
-          customMapStyle={theme.isDark ? customMapStyle : new Array()} 
+          customMapStyle={theme.isDark ? darkMapStyle : new Array()} 
           initialRegion={{ latitude: 33.7294, longitude: 73.0931, latitudeDelta: 0.05, longitudeDelta: 0.05 }}
         >
           {!activeRide && pickupObj && dropoffObj && (
@@ -311,8 +379,17 @@ export default function MainScreen({ route, navigation }) {
               key={`route-${activeRide._id}`}
               origin={activeRide.pickupLocation} destination={activeRide.dropoffLocation}
               apikey={GOOGLE_MAPS_APIKEY} strokeWidth={4} strokeColor={BRAND_COLOR}
-              onReady={(result) => mapRef.current.fitToCoordinates(result.coordinates, { edgePadding: { right: 50, bottom: 400, left: 50, top: 100 } })}
+              onReady={(result) => {
+                setActiveRideCoords({ pickup: result.coordinates[0], dropoff: result.coordinates[result.coordinates.length - 1] });
+                mapRef.current.fitToCoordinates(result.coordinates, { edgePadding: { right: 50, bottom: 400, left: 50, top: 100 } });
+              }}
             />
+          )}
+          {activeRide && activeRideCoords && (
+            <>
+              <Marker key="p2" coordinate={activeRideCoords.pickup}><View style={styles.customPinGreen}><View style={styles.pinDot}/></View></Marker>
+              <Marker key="d2" coordinate={activeRideCoords.dropoff}><View style={styles.customPinRed}><View style={styles.pinDot}/></View></Marker>
+            </>
           )}
           {activeRide && !isDriverMode && driverPosition && (
             <Marker coordinate={driverPosition} anchor={{ x: 0.5, y: 0.5 }}>
@@ -322,7 +399,6 @@ export default function MainScreen({ route, navigation }) {
         </MapView>
       )}
 
-      {/* 🎯 FLOATING BUTTONS */}
       <TouchableOpacity style={styles.recenterBtn} onPress={centerMap}>
         <MaterialIcons name="my-location" size={24} color={theme.text} />
       </TouchableOpacity>
@@ -331,26 +407,41 @@ export default function MainScreen({ route, navigation }) {
         <Ionicons name="apps" size={24} color={theme.text} />
       </TouchableOpacity>
 
+      {/* MENU MODAL */}
       <Modal visible={showMenu} transparent={true} animationType="fade">
         <TouchableOpacity style={styles.modalOverlay} activeOpacity={1} onPress={() => setShowMenu(false)}>
           <View style={styles.dropdownMenu}>
             <View style={styles.menuHeader}>
-              <View style={styles.menuAvatar}><Text style={{fontSize: 22, color: 'white', fontWeight: '900'}}>{user?.name?.charAt(0) || '?'}</Text></View>
+              <View style={styles.menuAvatar}><Text style={{fontSize: 22, color: DARK_BG, fontWeight: '900'}}>{user?.name?.charAt(0) || '?'}</Text></View>
               <View>
                 <Text style={styles.menuName}>{user?.name}</Text>
-                <Text style={styles.menuPhone}>+92 *** ******* (Hidden)</Text>
+                <Text style={styles.menuPhone}>{user?.phoneNumber}</Text>
               </View>
             </View>
             <View style={styles.neonDivider} />
-            <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); navigation.navigate('Profile'); }}><Ionicons name="person-outline" size={22} color={theme.text} style={styles.menuItemIcon} /><Text style={styles.menuItemText}>Profile & History</Text></TouchableOpacity>
-            <TouchableOpacity style={styles.menuItem} onPress={toggleRole}><Ionicons name="swap-vertical" size={22} color={BRAND_COLOR} style={styles.menuItemIcon} /><Text style={[styles.menuItemText, {color: BRAND_COLOR}]}>Switch to {isDriverMode ? 'Rider' : 'Driver'}</Text></TouchableOpacity>
-            <TouchableOpacity style={styles.menuItem} onPress={() => { toggleTheme(); setShowMenu(false); }}><Ionicons name={theme.isDark ? "sunny-outline" : "moon-outline"} size={22} color={theme.text} style={styles.menuItemIcon} /><Text style={styles.menuItemText}>Switch to {theme.isDark ? "Light" : "Dark"} Mode</Text></TouchableOpacity>
-            <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0, marginTop: 10 }]} onPress={logout}><Ionicons name="power" size={22} color="#ff4757" style={styles.menuItemIcon} /><Text style={[styles.menuItemText, {color: '#ff4757'}]}>Log Out</Text></TouchableOpacity>
+            <Text style={styles.systemStatusText}>SYSTEM: {isDriverMode ? 'DRIVER PROTOCOL' : 'RIDER PROTOCOL'}</Text>
+            
+            <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); navigation.navigate('Profile'); }}>
+              <Ionicons name="person-outline" size={22} color={theme.text} style={styles.menuItemIcon} />
+              <Text style={styles.menuItemText}>Profile & History</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuItem} onPress={toggleRole}>
+              <Ionicons name="swap-vertical" size={22} color={BRAND_COLOR} style={styles.menuItemIcon} />
+              <Text style={[styles.menuItemText, {color: BRAND_COLOR}]}>Switch to {isDriverMode ? 'Rider' : 'Driver'}</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={styles.menuItem} onPress={() => { toggleTheme(); setShowMenu(false); }}>
+              <Ionicons name={theme.isDark ? "sunny-outline" : "moon-outline"} size={22} color={theme.text} style={styles.menuItemIcon} />
+              <Text style={styles.menuItemText}>Switch to {theme.isDark ? "Light" : "Dark"} Mode</Text>
+            </TouchableOpacity>
+            <TouchableOpacity style={[styles.menuItem, { borderBottomWidth: 0, marginTop: 10 }]} onPress={logout}>
+              <Ionicons name="power" size={22} color="#ff4757" style={styles.menuItemIcon} />
+              <Text style={[styles.menuItemText, {color: '#ff4757'}]}>Log Out</Text>
+            </TouchableOpacity>
           </View>
         </TouchableOpacity>
       </Modal>
 
-      {/* 💬 SECURE IN-APP CHAT MODAL */}
+      {/* CHAT MODAL */}
       <Modal visible={isChatOpen} animationType="slide" transparent={true}>
         <KeyboardAvoidingView behavior={Platform.OS === 'ios' ? 'padding' : 'height'} style={styles.chatModalContainer}>
           <View style={styles.chatBox}>
@@ -358,12 +449,8 @@ export default function MainScreen({ route, navigation }) {
               <Text style={styles.chatTitle}>Secure Comm-Link</Text>
               <TouchableOpacity onPress={() => setIsChatOpen(false)}><Ionicons name="close" size={28} color={theme.text} /></TouchableOpacity>
             </View>
-            
             <FlatList
-              data={chatMessages}
-              keyExtractor={(item, index) => index.toString()}
-              showsVerticalScrollIndicator={false}
-              contentContainerStyle={{ paddingVertical: 10 }}
+              data={chatMessages} keyExtractor={(item, index) => index.toString()} showsVerticalScrollIndicator={false} contentContainerStyle={{ paddingVertical: 10 }}
               renderItem={({ item }) => {
                 const isMe = item.senderId === user._id;
                 return (
@@ -375,18 +462,52 @@ export default function MainScreen({ route, navigation }) {
                 );
               }}
             />
-            
             <View style={styles.chatInputRow}>
               <TextInput style={styles.chatInput} value={chatMessage} onChangeText={setChatMessage} placeholder="Type a message..." placeholderTextColor={theme.subText} />
-              <TouchableOpacity style={styles.chatSendBtn} onPress={sendChatMessage}>
-                <Ionicons name="send" size={20} color="white" />
-              </TouchableOpacity>
+              <TouchableOpacity style={styles.chatSendBtn} onPress={sendChatMessage}><Ionicons name="send" size={20} color="white" /></TouchableOpacity>
             </View>
           </View>
         </KeyboardAvoidingView>
       </Modal>
 
+      {/* ✨ RATING MODAL (RIDER) ✨ */}
+      <Modal visible={showRatingModal} transparent={true} animationType="fade">
+        <View style={styles.modalOverlayCenter}>
+          <View style={styles.ratingBox}>
+            <Text style={styles.ratingTitle}>You arrived!</Text>
+            <Text style={styles.ratingSubtitle}>How was your trip with {rideToRate?.driver?.firstName || 'your driver'}?</Text>
+            
+            <View style={styles.starsRow}>
+              {[1, 2, 3, 4, 5].map((star) => (
+                <TouchableOpacity key={star} onPress={() => setRating(star)}>
+                  <FontAwesome name={star <= rating ? "star" : "star-o"} size={45} color="#f1c40f" style={{ marginHorizontal: 5 }} />
+                </TouchableOpacity>
+              ))}
+            </View>
+            
+            <TouchableOpacity style={[styles.primaryBtn, {marginTop: 20}]} onPress={submitRating} disabled={rating === 0}>
+              <Text style={styles.primaryBtnText}>SUBMIT RATING</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
+      {/* ✨ COLLECT CASH MODAL (DRIVER) ✨ */}
+      <Modal visible={showCollectCash} transparent={true} animationType="slide">
+        <View style={styles.modalOverlayCenter}>
+          <View style={styles.cashBox}>
+            <MaterialCommunityIcons name="cash-multiple" size={80} color={BRAND_COLOR} style={{marginBottom: 10}} />
+            <Text style={styles.ratingSubtitle}>Please collect cash from the rider</Text>
+            <Text style={styles.cashAmountText}>Rs. {cashToCollect}</Text>
+            <TouchableOpacity style={[styles.primaryBtn, {marginTop: 30}]} onPress={() => { setShowCollectCash(false); setCashToCollect(0); resetRiderState(); if (isOnlineRef.current) fetchAvailableRides(); }}>
+              <Text style={styles.primaryBtnText}>CASH COLLECTED</Text>
+            </TouchableOpacity>
+          </View>
+        </View>
+      </Modal>
+
       {/* --- UI OVERLAYS --- */}
+
       {isDriverMode && !user.driverProfile?.isApproved ? (
         <View style={styles.pendingFullScreen}>
           <MaterialCommunityIcons name="shield-lock-outline" size={80} color={BRAND_COLOR} style={{marginBottom: 20}} />
@@ -402,7 +523,6 @@ export default function MainScreen({ route, navigation }) {
           <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'}}>
             <View>
               <Text style={styles.bigText}>Transit Active</Text>
-              {/* ✨ NEW: RIDER SEES DRIVER'S VEHICLE DETAILS ✨ */}
               {!isDriverMode && activeRide.driver?.driverProfile && (
                 <View style={{marginTop: -10, marginBottom: 10}}>
                   <Text style={{color: theme.subText, fontWeight: 'bold'}}>🚗 {activeRide.driver.driverProfile.vehicleInfo}</Text>
@@ -419,25 +539,44 @@ export default function MainScreen({ route, navigation }) {
             <View style={styles.addressRow}><View style={styles.dotRed} /><Text style={styles.addressText} numberOfLines={1}>{activeRide.dropoffLocation}</Text></View>
           </View>
 
-          {/* ✨ NEW: COMMUNICATION BUTTONS ✨ */}
           <View style={styles.commRow}>
             <TouchableOpacity style={styles.chatBtn} onPress={() => setIsChatOpen(true)}>
               <Ionicons name="chatbubbles" size={20} color={BRAND_COLOR} />
               <Text style={styles.chatBtnText}>Chat</Text>
             </TouchableOpacity>
-
-            <TouchableOpacity style={styles.callBtn} onPress={() => Alert.alert("Secure Call", "Connecting via TayKar Encrypted Proxy to protect phone numbers...")}>
+            <TouchableOpacity style={styles.callBtn} onPress={() => Alert.alert("Secure Call", "Connecting via Proxy...")}>
               <Ionicons name="call" size={20} color="white" />
               <Text style={styles.callBtnText}>Call</Text>
             </TouchableOpacity>
           </View>
 
+          {/* ✨ THE NEW DRIVER LIFECYCLE BUTTONS! ✨ */}
           {isDriverMode ? (
-            <TouchableOpacity style={styles.completeBtn} onPress={completeRide}>
-              <Text style={styles.buttonText}>Finish Ride & Collect Rs. {activeRide.acceptedFare}</Text>
-            </TouchableOpacity>
+            <>
+              {activeRide.status === 'accepted' && (
+                <TouchableOpacity style={styles.primaryBtn} onPress={() => updateRideStatus('arrived')}>
+                  <Text style={styles.primaryBtnText}>I HAVE ARRIVED</Text>
+                </TouchableOpacity>
+              )}
+              {activeRide.status === 'arrived' && (
+                <TouchableOpacity style={[styles.primaryBtn, {backgroundColor: '#3498db', shadowColor: '#3498db'}]} onPress={() => updateRideStatus('in_progress')}>
+                  <Text style={styles.primaryBtnText}>START RIDE</Text>
+                </TouchableOpacity>
+              )}
+              {activeRide.status === 'in_progress' && (
+                <TouchableOpacity style={[styles.primaryBtn, {backgroundColor: '#ff4757', shadowColor: '#ff4757'}]} onPress={() => updateRideStatus('completed')}>
+                  <Text style={styles.primaryBtnText}>END RIDE</Text>
+                </TouchableOpacity>
+              )}
+            </>
           ) : ( 
-            <View style={styles.waitingBadge}><Text style={styles.waitingBadgeText}>Driver Approaching Target</Text></View> 
+            <View style={styles.waitingBadge}>
+              <Text style={styles.waitingBadgeText}>
+                 {activeRide.status === 'accepted' ? 'Driver is on the way' :
+                  activeRide.status === 'arrived' ? 'Driver has arrived at pickup!' :
+                  'Ride in progress...'}
+              </Text>
+            </View> 
           )}
         </View>
       ) : 
@@ -551,15 +690,21 @@ export default function MainScreen({ route, navigation }) {
                 <FlatList data={bids} keyExtractor={(item, index) => index.toString()} renderItem={({ item }) => (
                   <View style={styles.bidCard}>
                     <View style={{flexDirection: 'row', alignItems: 'center'}}>
-                       <View style={styles.driverAvatar}><Text style={{color: 'white', fontWeight: 'bold'}}>{item.driverName.charAt(0)}</Text></View>
+                       <View style={styles.driverAvatar}><Text style={{color: DARK_BG, fontWeight: 'bold'}}>{item.driverName.charAt(0)}</Text></View>
                        <View>
                          <Text style={styles.driverName}>{item.driverName}</Text>
                          <Text style={styles.bidFare}>Rs. {item.fare}</Text>
                        </View>
                     </View>
-                    <TouchableOpacity style={styles.acceptBidButton} onPress={() => acceptBid(item)}>
-                      <Text style={styles.buttonText}>LOCK IN</Text>
-                    </TouchableOpacity>
+                    {/* ✨ NEW: REJECT AND ACCEPT BUTTONS! ✨ */}
+                    <View style={{flexDirection: 'row', gap: 10}}>
+                      <TouchableOpacity style={[styles.acceptBidButton, {backgroundColor: '#ff4757', paddingHorizontal: 12}]} onPress={() => rejectBid(item.driverId)}>
+                        <Text style={styles.buttonText}>X</Text>
+                      </TouchableOpacity>
+                      <TouchableOpacity style={styles.acceptBidButton} onPress={() => acceptBid(item)}>
+                        <Text style={styles.buttonText}>Accept</Text>
+                      </TouchableOpacity>
+                    </View>
                   </View>
                 )}/>
               </View>
@@ -574,7 +719,6 @@ export default function MainScreen({ route, navigation }) {
   );
 }
 
-// ✨ DYNAMIC STYLES GENERATOR ✨
 const getStyles = (theme) => StyleSheet.create({
   container: { flex: 1, backgroundColor: theme.bg },
   mapFallback: { flex: 1, justifyContent: 'center', alignItems: 'center', backgroundColor: theme.bg },
@@ -587,6 +731,7 @@ const getStyles = (theme) => StyleSheet.create({
   recenterBtn: { position: 'absolute', top: 50, right: 20, backgroundColor: theme.card, width: 45, height: 45, borderRadius: 10, justifyContent: 'center', alignItems: 'center', elevation: 5, shadowColor: '#000', shadowOpacity: 0.1, shadowRadius: 5, zIndex: 10, borderWidth: 1, borderColor: theme.border }, 
   
   modalOverlay: { flex: 1, backgroundColor: 'rgba(0,0,0,0.6)', justifyContent: 'flex-start' },
+  modalOverlayCenter: { flex: 1, backgroundColor: 'rgba(0,0,0,0.8)', justifyContent: 'center', alignItems: 'center' }, // For Rating/Cash modals
   dropdownMenu: { backgroundColor: theme.card, marginTop: 100, marginHorizontal: 20, padding: 20, borderRadius: 15, borderWidth: 1, borderColor: theme.border, shadowColor: theme.brand, shadowOpacity: 0.2, shadowRadius: 20, elevation: 10 },
   menuHeader: { flexDirection: 'row', alignItems: 'center' },
   menuAvatar: { width: 55, height: 55, backgroundColor: theme.brand, borderRadius: 30, justifyContent: 'center', alignItems: 'center', marginRight: 15 },
@@ -662,7 +807,7 @@ const getStyles = (theme) => StyleSheet.create({
   pendingTitle: { fontSize: 24, fontWeight: '900', color: theme.text, marginBottom: 10, letterSpacing: 1 },
   pendingText: { fontSize: 14, color: theme.subText, textAlign: 'center', lineHeight: 22 },
 
-  // ✨ IN-APP CHAT STYLES ✨
+  // Chat Styles
   commRow: { flexDirection: 'row', justifyContent: 'space-between', marginBottom: 15 },
   chatBtn: { flex: 1, flexDirection: 'row', backgroundColor: 'rgba(0,208,108,0.1)', padding: 15, borderRadius: 12, justifyContent: 'center', alignItems: 'center', marginRight: 10, borderWidth: 1, borderColor: 'rgba(0,208,108,0.3)' },
   chatBtnText: { color: BRAND_COLOR, fontWeight: 'bold', marginLeft: 8, fontSize: 16 },
@@ -673,15 +818,22 @@ const getStyles = (theme) => StyleSheet.create({
   chatBox: { backgroundColor: theme.card, height: '60%', borderTopLeftRadius: 30, borderTopRightRadius: 30, padding: 20, borderWidth: 1, borderColor: theme.border },
   chatHeader: { flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', borderBottomWidth: 1, borderBottomColor: theme.border, paddingBottom: 15, marginBottom: 10 },
   chatTitle: { fontSize: 20, fontWeight: '900', color: theme.text },
-  
   chatBubble: { maxWidth: '80%', padding: 15, borderRadius: 15, marginBottom: 10 },
   chatBubbleMe: { alignSelf: 'flex-end', backgroundColor: BRAND_COLOR, borderBottomRightRadius: 0 },
   chatBubbleThem: { alignSelf: 'flex-start', backgroundColor: theme.input, borderBottomLeftRadius: 0, borderWidth: 1, borderColor: theme.border },
   chatSender: { fontSize: 10, fontWeight: 'bold', color: 'rgba(255,255,255,0.7)', marginBottom: 5 },
   chatText: { fontSize: 16, color: 'white' },
   chatTime: { fontSize: 10, color: 'rgba(255,255,255,0.5)', alignSelf: 'flex-end', marginTop: 5 },
-  
   chatInputRow: { flexDirection: 'row', alignItems: 'center', marginTop: 10 },
   chatInput: { flex: 1, backgroundColor: theme.input, color: theme.text, padding: 15, borderRadius: 25, borderWidth: 1, borderColor: theme.border },
-  chatSendBtn: { backgroundColor: BRAND_COLOR, width: 50, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', marginLeft: 10 }
+  chatSendBtn: { backgroundColor: BRAND_COLOR, width: 50, height: 50, borderRadius: 25, justifyContent: 'center', alignItems: 'center', marginLeft: 10 },
+
+  // New Modals (Rating & Cash)
+  ratingBox: { width: '90%', backgroundColor: theme.card, padding: 30, borderRadius: 20, alignItems: 'center', borderWidth: 1, borderColor: theme.brand, shadowColor: theme.brand, shadowOpacity: 0.3, shadowRadius: 20 },
+  ratingTitle: { fontSize: 28, fontWeight: '900', color: theme.text, marginBottom: 10 },
+  ratingSubtitle: { fontSize: 16, color: theme.subText, textAlign: 'center', marginBottom: 20 },
+  starsRow: { flexDirection: 'row', justifyContent: 'center', marginVertical: 10 },
+  
+  cashBox: { width: '90%', backgroundColor: theme.card, padding: 40, borderRadius: 20, alignItems: 'center', borderWidth: 2, borderColor: theme.brand },
+  cashAmountText: { fontSize: 50, fontWeight: '900', color: theme.brand, marginVertical: 20 }
 });
