@@ -88,16 +88,16 @@ router.put('/settings', verifyToken, async (req, res) => {
         let settings = await Settings.findOne();
         if (!settings) settings = new Settings();
         
-        // Save the 3 different vehicle categories!
+        // ✨ NEW: Save the Company Commission!
+        settings.companyCommission = req.body.companyCommission;
+        
         settings.Car = req.body.Car;
         settings.Bike = req.body.Bike;
         settings.Rickshaw = req.body.Rickshaw;
         
         await settings.save();
-        res.status(200).json({ message: "Settings updated!", settings });
-    } catch (error) {
-        res.status(500).json({ message: "Server error" });
-    }
+        res.status(200).json(settings);
+    } catch (error) { res.status(500).json({ message: "Server error" }); }
 });
 // --- 8. SUSPEND/UNSUSPEND USER ---
 router.put('/users/:id/suspend', verifyToken, async (req, res) => {
