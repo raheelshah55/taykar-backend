@@ -14,7 +14,7 @@ const BRAND_COLOR = '#00D06C';
 const DARK_BG = '#03060A';
 const CARD_BG = '#0A121A';
 
-const customMapStyle =[
+const darkMapStyle =[
   { elementType: "geometry", stylers:[{ color: "#0A121A" }] },
   { elementType: "labels.text.stroke", stylers:[{ color: "#0A121A" }] },
   { elementType: "labels.text.fill", stylers:[{ color: "#88929E" }] },
@@ -256,18 +256,7 @@ export default function MainScreen({ route, navigation }) {
     } catch (error) {}
   };
 
-  const toggleRole = async () => {
-    if (activeRide) return Alert.alert("Hold up!", "Cannot switch roles during active ride.");
-    if (!isDriverMode && (!user.driverProfile || !user.driverProfile.cnicFront)) {
-      setShowMenu(false); return navigation.navigate('UpgradeDriver');
-    }
-    const newRole = isDriverMode ? 'rider' : 'driver';
-    try {
-      const res = await axios.put(`${API_URL}/api/auth/switch-role`, { newRole }, { headers: { Authorization: `Bearer ${token}` } });
-      setToken(res.data.token); setUser(res.data.user); 
-      setIsDriverMode(newRole === 'driver'); setShowMenu(false); setIsOnline(false); 
-    } catch (error) { Alert.alert("Error", "Could not switch roles."); }
-  };
+ 
 
   const requestRide = async () => {
     if (!pickupObj || !dropoffObj || !fare || fare === "Calculating...") return Alert.alert("Hold up!", "Please wait for fare calculation.");
@@ -425,10 +414,7 @@ export default function MainScreen({ route, navigation }) {
               <Ionicons name="person-outline" size={22} color={theme.text} style={styles.menuItemIcon} />
               <Text style={styles.menuItemText}>Profile & History</Text>
             </TouchableOpacity>
-            <TouchableOpacity style={styles.menuItem} onPress={toggleRole}>
-              <Ionicons name="swap-vertical" size={22} color={BRAND_COLOR} style={styles.menuItemIcon} />
-              <Text style={[styles.menuItemText, {color: BRAND_COLOR}]}>Switch to {isDriverMode ? 'Rider' : 'Driver'}</Text>
-            </TouchableOpacity>
+            
             <TouchableOpacity style={styles.menuItem} onPress={() => { toggleTheme(); setShowMenu(false); }}>
               <Ionicons name={theme.isDark ? "sunny-outline" : "moon-outline"} size={22} color={theme.text} style={styles.menuItemIcon} />
               <Text style={styles.menuItemText}>Switch to {theme.isDark ? "Light" : "Dark"} Mode</Text>
@@ -585,8 +571,8 @@ export default function MainScreen({ route, navigation }) {
         <>
           <View style={styles.onlineToggleContainer}>
             {isOnline && <Animated.View style={[styles.radarRing, { transform: [{ scale: radarScale }], opacity: radarOpacity }]} />}
-            <MaterialCommunityIcons name="radar" size={20} color={isOnline ? BRAND_COLOR : theme.subText} style={{marginRight: 10}} />
-            <Text style={[styles.onlineText, { color: isOnline ? (theme.isDark ? 'white' : '#333') : theme.subText }]}>{isOnline ? 'TRANSMITTING' : 'OFFLINE'}</Text>
+            <MaterialCommunityIcons name="radar" size={15} color={isOnline ? BRAND_COLOR : theme.subText} style={{marginRight: 10}} />
+            <Text style={[styles.onlineText, { color: isOnline ? (theme.isDark ? 'white' : '#333') : theme.subText }]}>{isOnline ? 'ONLINE' : 'OFFLINE'}</Text>
             <Switch value={isOnline} onValueChange={(val) => { setIsOnline(val); if (val) fetchAvailableRides(); }} trackColor={{ false: theme.border, true: 'rgba(0, 208, 108, 0.4)' }} thumbColor={isOnline ? BRAND_COLOR : '#888'} />
           </View>
 
@@ -636,7 +622,7 @@ export default function MainScreen({ route, navigation }) {
           {!pickupObj || !dropoffObj ? (
              <TouchableOpacity style={styles.searchBarFake} onPress={() => navigation.navigate('LocationSearch', { isDarkMap: theme.isDark })}>
                <Ionicons name="search" size={20} color={theme.subText} style={{marginRight: 10}} />
-               <Text style={styles.searchBarText}>Initialize Route...</Text>
+               <Text style={styles.searchBarText}>Let's Go...</Text>
              </TouchableOpacity>
           ) : !currentRide ? (
             <View>
