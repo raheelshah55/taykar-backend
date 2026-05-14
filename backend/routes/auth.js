@@ -6,24 +6,51 @@ const verifyToken = require('../middleware/authMiddleware');
 
 const router = express.Router();
 
-// --- 1. SEND OTP (CHEAT CODE BYPASS) ---
+// Helper to format Pakistani numbers automatically for Twilio
+const formatPhone = (phone) => {
+    if (phone.startsWith('0')) return '+92' + phone.slice(1);
+    if (!phone.startsWith('+')) return '+' + phone;
+    return phone;
+};
+
+// Initialize Twilio
+const twilio = require('twilio');
+const client = twilio(process.env.TWILIO_ACCOUNT_SID, process.env.TWILIO_AUTH_TOKEN);
+
+// --- 1. SEND REAL SMS OTP ---
 router.post('/send-otp', async (req, res) => {
     try {
         const { phoneNumber } = req.body;
         if (!phoneNumber) return res.status(400).json({ message: "Phone number required" });
-        res.status(200).json({ message: "OTP Sent!", otp: "123456" });
-    } catch (error) { res.status(500).json({ message: "Server error" }); }
+        
+        // ✨ REAL WORLD: Twilio physically sends an SMS to the user!
+        await client.verify.v2.services(process.env.TWILIO_VERIFY_SID)
+            .verifications
+            .create({ to: formatPhone(phoneNumber), channel: 'sms' });
+
+        res.status(200).json({ message: "Real OTP Sent!" });
+    } catch (error) {
+        console.error("Twilio Send Error:", error);
+        res.status(500).json({ message: "Failed to send SMS. Check Twilio." });
+    }
 });
 
-// --- 2. VERIFY OTP & LOGIN ---
+// --- 2. VERIFY REAL OTP ---
 router.post('/verify-otp', async (req, res) => {
     try {
         const { phoneNumber, otp, selectedRole } = req.body;
         
-        // ✨ THE FIX: Explicitly checks for 123456 ✨
-        if (otp !== "123456") return res.status(400).json({ message: "Invalid OTP Code" });
+        // ✨ REAL WORLD: Ask Twilio if the code the user typed is correct!
+        const verification = await client.verify.v2.services(process.env.TWILIO_VERIFY_SID)
+            .verificationChecks
+            .create({ to: formatPhone(phoneNumber), code: otp });
+
+        if (verification.status !== 'approved') {
+            return res.status(400).json({ message: "Incorrect OTP Code!" });
+        }
 
         let user = await User.findOne({ phoneNumber });
+        
         if (user) {
             user.activeRole = selectedRole || 'rider';
             await user.save();
@@ -32,9 +59,11 @@ router.post('/verify-otp', async (req, res) => {
         } else {
             return res.status(200).json({ isRegistered: false });
         }
-    } catch (error) { res.status(500).json({ message: "Server error" }); }
+    } catch (error) {
+        console.error("Twilio Verify Error:", error);
+        res.status(500).json({ message: "OTP Verification failed." });
+    }
 });
-
 // --- 3. REGISTER NEW PHONE USER (With Vehicle Info) ---
 router.post('/register', async (req, res) => {
     try {
