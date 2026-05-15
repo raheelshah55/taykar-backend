@@ -2,15 +2,46 @@ const express = require('express');
 const Ride = require('../models/Ride');
 const User = require('../models/User');
 const verifyToken = require('../middleware/authMiddleware');
-
+const { Expo } = require('expo-server-sdk');
+let expo = new Expo();
 const router = express.Router();
 
+// --- 1. RIDER REQUESTS A RIDE ---
 router.post('/request', verifyToken, async (req, res) => {
     try {
         const { pickupLocation, dropoffLocation, offeredFare, vehicleType } = req.body;
         const newRide = new Ride({ rider: req.user.userId, pickupLocation, dropoffLocation, offeredFare, vehicleType: vehicleType || 'Car' });
         await newRide.save();
+        
+        // 1. Tell open apps via Sockets
         req.app.get('io').emit('newRideRequest', newRide);
+
+        // ✨ 2. WAKE UP CLOSED APPS VIA PUSH NOTIFICATIONS ✨
+        try {
+            // Find all approved drivers
+            const drivers = await User.find({ activeRole: 'driver', 'driverProfile.isApproved': true });
+            let notifications = [];
+
+            for (let driver of drivers) {
+                if (driver.pushToken && Expo.isExpoPushToken(driver.pushToken)) {
+                    notifications.push({
+                        to: driver.pushToken,
+                        sound: 'default', // This makes the phone ring/vibrate!
+                        title: '🚗 New Ride Request!',
+                        body: `Earn Rs. ${offeredFare} - Pickup: ${pickupLocation}`,
+                        data: { rideId: newRide._id },
+                    });
+                }
+            }
+
+            let chunks = expo.chunkPushNotifications(notifications);
+            for (let chunk of chunks) {
+                await expo.sendPushNotificationsAsync(chunk);
+            }
+        } catch (pushError) {
+            console.error("Push Notification Error: ", pushError);
+        }
+
         res.status(201).json({ message: "Ride requested successfully!", ride: newRide });
     } catch (error) { res.status(500).json({ message: "Server error" }); }
 });

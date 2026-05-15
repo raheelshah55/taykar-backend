@@ -3,7 +3,16 @@ import { NavigationContainer } from '@react-navigation/native';
 import { createNativeStackNavigator } from '@react-navigation/native-stack';
 import { AuthProvider, AuthContext } from './AuthContext';
 import { Text } from 'react-native'; // For tab icons
-
+import * as Notifications from 'expo-notifications';
+import * as Device from 'expo-device';
+import Constants from 'expo-constants';
+Notifications.setNotificationHandler({
+  handleNotification: async () => ({
+    shouldShowAlert: true,
+    shouldPlaySound: true,
+    shouldSetBadge: false,
+  }),
+});
 // --- IMPORT ALL SCREENS ---
 import WelcomeScreen from './screens/WelcomeScreen';
 import RoleSelectionScreen from './screens/RoleSelectionScreen';
