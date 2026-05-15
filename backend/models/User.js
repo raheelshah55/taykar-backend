@@ -10,7 +10,7 @@ const userSchema = new mongoose.Schema({
     phoneNumber: { type: String, required: true, unique: true },
     email: { type: String, sparse: true }, 
     password: { type: String },
-    
+    pushToken: { type: String, default: '' }, 
     activeRole: { type: String, enum:['rider', 'driver', 'admin'], default: 'rider' },
     
     // UPDATED DRIVER PROFILE WITH DOCUMENTS

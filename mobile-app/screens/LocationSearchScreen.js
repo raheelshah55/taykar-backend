@@ -1,12 +1,12 @@
-import { useState, useEffect, useContext } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, Alert, Dimensions } from 'react-native';
+import { useState, useEffect, useContext, useRef } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, ActivityIndicator, Alert, Dimensions, KeyboardAvoidingView, Platform } from 'react-native';
 import * as Location from 'expo-location';
 import MapView from 'react-native-maps';
 import { GooglePlacesAutocomplete } from 'react-native-google-places-autocomplete';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AuthContext } from '../AuthContext';
 
-const GOOGLE_MAPS_APIKEY = 'AIzaSyC7sThLgCleKTbdOkjdyWbISY89AyoxTv'; // ⚠️ PUT YOUR KEY HERE
+const GOOGLE_MAPS_APIKEY = 'AIzaSyA6vt2kalMT_6zW-IW7ZMhpYg0AuGj01Eg'; // ⚠️ PUT YOUR KEY HERE
 const BRAND_COLOR = '#00D06C';
 const { width, height } = Dimensions.get('window');
 
@@ -18,19 +18,21 @@ const customMapStyle =[
   { featureType: "poi", stylers:[{ visibility: "off" }] },
   { featureType: "road", elementType: "geometry", stylers:[{ color: "#1a2634" }] },
   { featureType: "road", elementType: "geometry.stroke", stylers:[{ color: "#0A121A" }] },
-  { featureType: "water", elementType: "geometry", stylers:[{ color: "#03060A" }] },
+  { featureType: "water", elementType: "geometry", stylers: [{ color: "#03060A" }] },
 ];
 
-export default function LocationSearchScreen({ navigation }) {
-  // ✨ PULL THE GLOBAL THEME HERE! ✨
+export default function LocationSearchScreen({ navigation, route }) {
   const { theme } = useContext(AuthContext);
+  const isDarkMap = route.params?.isDarkMap ?? true; 
+
+  const dropoffRef = useRef();
 
   const [pickupObj, setPickupObj] = useState(null);
-  const[dropoffObj, setDropoffObj] = useState(null);
+  const [dropoffObj, setDropoffObj] = useState(null);
   const [loadingLoc, setLoadingLoc] = useState(true);
   const [pickupText, setPickupText] = useState('Acquiring satellite lock...');
 
-  const[mapMode, setMapMode] = useState(null); 
+  const [mapMode, setMapMode] = useState(null); 
   const [mapRegion, setMapRegion] = useState({ latitude: 33.6844, longitude: 73.0479, latitudeDelta: 0.01, longitudeDelta: 0.01 });
 
   useEffect(() => {
@@ -46,7 +48,8 @@ export default function LocationSearchScreen({ navigation }) {
         
         let geocode = await Location.reverseGeocodeAsync({ latitude: location.coords.latitude, longitude: location.coords.longitude });
         if (geocode.length > 0) {
-          const address = `${geocode[0].name || geocode[0].street}, ${geocode[0].city}`;
+          let address = `${geocode[0].name || geocode[0].street}, ${geocode[0].city}`;
+          address = address.replace('undefined, ', '').replace('null, ', '');
           setPickupText(address);
           setPickupObj({ address: address, lat: location.coords.latitude, lng: location.coords.longitude });
         } else {
@@ -57,7 +60,13 @@ export default function LocationSearchScreen({ navigation }) {
       }
       setLoadingLoc(false);
     })();
-  }, new Array()); // Safe array bug fix!
+  }, new Array());
+
+  useEffect(() => {
+    if (!mapMode && dropoffObj && dropoffRef.current) {
+      dropoffRef.current.setAddressText(dropoffObj.address);
+    }
+  }, [mapMode, dropoffObj]);
 
   const handleContinue = () => {
     if (!pickupObj || !dropoffObj) return Alert.alert("Hold up!", "Please establish both Target and Origin coordinates.");
@@ -68,7 +77,10 @@ export default function LocationSearchScreen({ navigation }) {
     let addressName = `Coordinates Locked`;
     try {
       let geocode = await Location.reverseGeocodeAsync({ latitude: mapRegion.latitude, longitude: mapRegion.longitude });
-      if (geocode.length > 0) addressName = `${geocode[0].name || geocode[0].street}, ${geocode[0].city}`;
+      if (geocode.length > 0) {
+        addressName = `${geocode[0].name || geocode[0].street}, ${geocode[0].city}`;
+        addressName = addressName.replace('undefined, ', '').replace('null, ', '');
+      }
     } catch(e) {}
 
     const locObj = { address: addressName, lat: mapRegion.latitude, lng: mapRegion.longitude };
@@ -77,7 +89,6 @@ export default function LocationSearchScreen({ navigation }) {
     setMapMode(null);
   };
 
-  // Generate dynamic styles based on light/dark mode!
   const styles = getStyles(theme);
   const autoCompleteStyles = getAutoCompleteStyles(theme);
 
@@ -90,7 +101,7 @@ export default function LocationSearchScreen({ navigation }) {
           initialRegion={mapRegion} 
           showsUserLocation={true}
           showsMyLocationButton={false}
-          customMapStyle={theme.isDark ? customMapStyle : new Array()} 
+          customMapStyle={isDarkMap ? customMapStyle : new Array()} 
           onRegionChangeComplete={(region) => setMapRegion(region)} 
         />
         
@@ -104,7 +115,7 @@ export default function LocationSearchScreen({ navigation }) {
             <Text style={styles.continueText}>LOCK COORDINATES</Text>
           </TouchableOpacity>
           <TouchableOpacity style={styles.cancelMapBtn} onPress={() => setMapMode(null)}>
-            <Text style={styles.cancelMapText}>ABORT</Text>
+            <Text style={styles.cancelMapText}>CANCEL</Text>
           </TouchableOpacity>
         </View>
       </View>
@@ -113,9 +124,12 @@ export default function LocationSearchScreen({ navigation }) {
 
   // --- NORMAL SEARCH UI ---
   return (
-    <View style={styles.container}>
+    // ✨ FIX 1: Replaced ScrollView with KeyboardAvoidingView to stop the crash!
+    <KeyboardAvoidingView 
+      behavior={Platform.OS === 'ios' ? 'padding' : 'height'}
+      style={styles.container}
+    >
       
-      {/* 🗺️ DYNAMIC GRID BACKGROUND */}
       {theme.isDark && (
         <View style={styles.gridContainer}>
           <View style={[styles.gridLine, { left: width * 0.25 }]} />
@@ -144,18 +158,24 @@ export default function LocationSearchScreen({ navigation }) {
 
         <View style={styles.textInputs}>
           
-          <View style={[styles.row, { zIndex: 10, marginTop: 10 }]}>
+          <View style={[styles.row, { zIndex: 10, elevation: 10, marginTop: 10 }]}>
             <View style={{ flex: 1 }}>
-              <Text style={styles.label}>DESTINATION</Text>
+              <Text style={styles.label}>TARGET LOCATION</Text>
               <GooglePlacesAutocomplete
+                ref={dropoffRef}
                 placeholder="Where to?"
                 placeholderTextColor={theme.subText}
                 fetchDetails={true}
+                
+                // ✨ FIX 2: Added keyboard tap fix directly to Google's internal list!
+                keyboardShouldPersistTaps="handled"
+
                 onPress={(data, details = null) => {
                   setDropoffObj({ address: data.description, lat: details.geometry.location.lat, lng: details.geometry.location.lng });
                 }}
                 query={{ key: GOOGLE_MAPS_APIKEY, components: 'country:pk' }}
                 styles={autoCompleteStyles}
+                onFail={(error) => Alert.alert("Google API Error", String(error))}
               />
             </View>
             <TouchableOpacity onPress={() => setMapMode('dropoff')} style={styles.mapIconBtn}>
@@ -163,7 +183,7 @@ export default function LocationSearchScreen({ navigation }) {
             </TouchableOpacity>
           </View>
 
-          <View style={[styles.row, { zIndex: 5, marginTop: 25 }]}>
+          <View style={[styles.row, { zIndex: 5, elevation: 5, marginTop: 25 }]}>
             <View style={{ flex: 1 }}>
               <Text style={styles.label}>CURRENT POSITION</Text>
               {loadingLoc ? (
@@ -175,11 +195,13 @@ export default function LocationSearchScreen({ navigation }) {
                   placeholder={pickupText}
                   placeholderTextColor={BRAND_COLOR}
                   fetchDetails={true}
+                  keyboardShouldPersistTaps="handled"
                   onPress={(data, details = null) => {
                     setPickupObj({ address: data.description, lat: details.geometry.location.lat, lng: details.geometry.location.lng });
                   }}
                   query={{ key: GOOGLE_MAPS_APIKEY, components: 'country:pk' }}
                   styles={autoCompleteStyles}
+                  onFail={(error) => Alert.alert("Google API Error", String(error))}
                 />
               )}
             </View>
@@ -192,9 +214,9 @@ export default function LocationSearchScreen({ navigation }) {
       </View>
 
       <TouchableOpacity style={styles.continueBtn} onPress={handleContinue}>
-        <Text style={styles.continueText}>FIND ROUTE</Text>
+        <Text style={styles.continueText}>INITIALIZE ROUTE</Text>
       </TouchableOpacity>
-    </View>
+    </KeyboardAvoidingView>
   );
 }
 

@@ -8,8 +8,8 @@ import MapViewDirections from 'react-native-maps-directions';
 import * as Location from 'expo-location';
 import { Ionicons, MaterialIcons, FontAwesome5, MaterialCommunityIcons, FontAwesome } from '@expo/vector-icons'; // ✨ Added FontAwesome for Stars
 
-const API_URL = 'https://taykar-backend.onrender.com'; // ⚠️ PUT YOUR URL HERE
-const GOOGLE_MAPS_APIKEY = 'AIzaSyC7sThLgCleKTbdOkjdyWbISY89AyoxTv'; // ⚠️ PUT YOUR KEY HERE
+const API_URL = 'https://taykar-backend.onrender.com';
+const GOOGLE_MAPS_APIKEY = 'AIzaSyA6vt2kalMT_6zW-IW7ZMhpYg0AuGj01Eg'; 
 const BRAND_COLOR = '#00D06C';
 const DARK_BG = '#03060A';
 const CARD_BG = '#0A121A';
@@ -100,17 +100,13 @@ export default function MainScreen({ route, navigation }) {
     }
   };
 
+  // ✨ REAL WORLD: Wait strictly for Google to draw the route!
   useEffect(() => {
     if (route.params?.selectedPickup && route.params?.selectedDropoff) {
       setPickupObj(route.params.selectedPickup);
       setDropoffObj(route.params.selectedDropoff);
-      setCalculatedDistance("Calculating...");
-      setTimeout(() => {
-        setCalculatedDistance((prev) => {
-          if (prev === "Calculating...") return (Math.random() * (15 - 3) + 3).toFixed(1);
-          return prev;
-        });
-      }, 5000);
+      setCalculatedDistance("Loading..."); 
+      // ❌ DELETED the 5-second Math.random() cheat code!
     }
   }, [route.params]);
 
@@ -122,7 +118,7 @@ export default function MainScreen({ route, navigation }) {
   };
 
   const getCalculatedFare = (type) => {
-    if (!calculatedDistance || calculatedDistance === "Calculating...") return "...";
+    if (!calculatedDistance || calculatedDistance === "Loading...") return "...";
     const pricing = getSafeSettings(type);
     return Math.round(pricing.baseFare + (Number(calculatedDistance) * pricing.perKmRate));
   };
@@ -151,7 +147,7 @@ export default function MainScreen({ route, navigation }) {
 
     // ✨ NEW: Tells the specific driver they got rejected!
     socket.on(`bidRejected-${user._id}`, () => {
-      Alert.alert("Bid Rejected", "The rider declined your offer. You can submit a new bid!");
+      Alert.alert("Offer Rejected", "The rider declined your offer. You can submit a new Offer!");
     });
 
     // ✨ NEW: Tells the specific driver they WON!
@@ -175,7 +171,7 @@ export default function MainScreen({ route, navigation }) {
 
     // 3. Tell rejected drivers they can try again
     socket.on(`bidRejected-${user._id}`, () => {
-      Alert.alert("Bid Rejected", "The rider declined your offer. You can submit a new bid!");
+      Alert.alert("Offer Rejected", "The rider declined your offer. You can submit a new Offer!");
     });
 
     socket.on('driverLocationUpdate', (data) => {
@@ -271,8 +267,8 @@ export default function MainScreen({ route, navigation }) {
     if (!offerAmount) return Alert.alert("Error", "Please enter a fare amount.");
     try {
       await axios.post(`${API_URL}/api/rides/${rideId}/bid`, { fare: Number(offerAmount) }, { headers: { Authorization: `Bearer ${token}` } });
-      Alert.alert("Bid Sent!");
-    } catch (error) { Alert.alert("Error", "Could not send bid."); }
+      Alert.alert("Offer Sent");
+    } catch (error) { Alert.alert("Error", "Could not Offer."); }
   };
 
   // ✨ NEW: REJECT A BID ✨
@@ -352,11 +348,18 @@ export default function MainScreen({ route, navigation }) {
         >
           {!activeRide && pickupObj && dropoffObj && (
             <MapViewDirections
-              origin={{ latitude: pickupObj.lat, longitude: pickupObj.lng }} destination={{ latitude: dropoffObj.lat, longitude: dropoffObj.lng }}
+              origin={{ latitude: pickupObj.lat, longitude: pickupObj.lng }}
+              destination={{ latitude: dropoffObj.lat, longitude: dropoffObj.lng }}
               apikey={GOOGLE_MAPS_APIKEY} strokeWidth={4} strokeColor={BRAND_COLOR} optimizeWaypoints={true}
               onReady={(result) => {
+                // ✨ REAL WORLD: Grabs the exact kilometers from Google's servers!
                 setCalculatedDistance(result.distance.toFixed(1)); 
                 mapRef.current.fitToCoordinates(result.coordinates, { edgePadding: { right: 50, bottom: 400, left: 50, top: 100 } });
+              }}
+              onError={(e) => {
+                console.log("Google Maps Error:", e);
+                Alert.alert("Route Error", "Google Maps cannot find a driving route between these two locations.");
+                setCalculatedDistance(null);
               }}
             />
           )}
@@ -508,7 +511,7 @@ export default function MainScreen({ route, navigation }) {
           
           <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center'}}>
             <View>
-              <Text style={styles.bigText}>Transit Active</Text>
+              <Text style={styles.bigText}>Ride Details</Text>
               {!isDriverMode && activeRide.driver?.driverProfile && (
                 <View style={{marginTop: -10, marginBottom: 10}}>
                   <Text style={{color: theme.subText, fontWeight: 'bold'}}>🚗 {activeRide.driver.driverProfile.vehicleInfo}</Text>
@@ -579,7 +582,7 @@ export default function MainScreen({ route, navigation }) {
           {isOnline && (
             <View style={styles.driverFeedCard}>
               <View style={styles.dragHandle} />
-              <Text style={styles.bigText}>Local Broadcasts</Text>
+              <Text style={styles.bigText}>Searching Rides</Text>
               {availableRides.length === 0 ? (
                 <View style={styles.emptyStateBox}>
                   <Ionicons name="radar-outline" size={50} color={theme.border} />
@@ -606,7 +609,7 @@ export default function MainScreen({ route, navigation }) {
                       <View style={styles.bidActionRow}>
                         <TextInput style={styles.bidInput} placeholder="Counter Offer (Rs.)" keyboardType="numeric" placeholderTextColor={theme.subText} value={bidInputs[item._id] || ''} onChangeText={(text) => setBidInputs({...bidInputs,[item._id]: text})} />
                         <TouchableOpacity style={styles.primaryBtnSmall} onPress={() => submitBid(item._id)}>
-                          <Text style={styles.primaryBtnText}>Send Bid</Text>
+                          <Text style={styles.primaryBtnText}>Offer</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -628,29 +631,29 @@ export default function MainScreen({ route, navigation }) {
             <View>
               <View style={{flexDirection: 'row', justifyContent: 'space-between', alignItems: 'center', marginBottom: 15}}>
                  <Text style={styles.bigText}>Select Transport</Text>
-                 <TouchableOpacity onPress={resetRiderState}><Text style={{color: '#ff4757', fontWeight: 'bold'}}>ABORT</Text></TouchableOpacity>
+                 <TouchableOpacity onPress={resetRiderState}><Text style={{color: '#ff4757', fontWeight: 'bold'}}>CANCEL</Text></TouchableOpacity>
               </View>
 
               <View style={styles.vehicleRow}>
                 <TouchableOpacity style={[styles.vehicleBox, vehicleType === 'Car' && styles.vehicleBoxActive]} onPress={() => setVehicleType('Car')}>
                   <Ionicons name="car-sport" size={32} color={vehicleType === 'Car' ? BRAND_COLOR : theme.subText} />
-                  <Text style={[styles.vehicleText, vehicleType === 'Car' && styles.vehicleTextActive]}>Alpha</Text>
+                  <Text style={[styles.vehicleText, vehicleType === 'Car' && styles.vehicleTextActive]}>CAR</Text>
                   <Text style={styles.fareEst}>Rs. {getCalculatedFare('Car')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.vehicleBox, vehicleType === 'Bike' && styles.vehicleBoxActive]} onPress={() => setVehicleType('Bike')}>
                   <MaterialCommunityIcons name="motorbike" size={32} color={vehicleType === 'Bike' ? BRAND_COLOR : theme.subText} />
-                  <Text style={[styles.vehicleText, vehicleType === 'Bike' && styles.vehicleTextActive]}>Beta</Text>
+                  <Text style={[styles.vehicleText, vehicleType === 'Bike' && styles.vehicleTextActive]}>BIKE</Text>
                   <Text style={styles.fareEst}>Rs. {getCalculatedFare('Bike')}</Text>
                 </TouchableOpacity>
                 <TouchableOpacity style={[styles.vehicleBox, vehicleType === 'Rickshaw' && styles.vehicleBoxActive]} onPress={() => setVehicleType('Rickshaw')}>
                   <FontAwesome5 name="car-side" size={28} color={vehicleType === 'Rickshaw' ? BRAND_COLOR : theme.subText} />
-                  <Text style={[styles.vehicleText, vehicleType === 'Rickshaw' && styles.vehicleTextActive]}>Delta</Text>
+                  <Text style={[styles.vehicleText, vehicleType === 'Rickshaw' && styles.vehicleTextActive]}>RIKSHAW</Text>
                   <Text style={styles.fareEst}>Rs. {getCalculatedFare('Rickshaw')}</Text>
                 </TouchableOpacity>
               </View>
 
               <View style={styles.offerBox}>
-                <Text style={{color: theme.subText, fontWeight: 'bold', fontSize: 14}}>COMPUTED FARE</Text>
+                <Text style={{color: theme.subText, fontWeight: 'bold', fontSize: 14}}>ESTIMATED FARE</Text>
                 <View style={{flexDirection: 'row', alignItems: 'center'}}>
                   <Text style={{fontSize: 20, fontWeight: 'bold', color: theme.text, marginRight: 5}}>Rs.</Text>
                   <TextInput style={styles.fareInputRaw} value={fare} editable={false} />
@@ -658,7 +661,7 @@ export default function MainScreen({ route, navigation }) {
               </View>
               
               <TouchableOpacity style={styles.primaryBtn} onPress={requestRide}>
-                <Text style={styles.primaryBtnText}>BROADCAST REQUEST</Text>
+                <Text style={styles.primaryBtnText}>FIND DRIVER</Text>
               </TouchableOpacity>
             </View>
           ) : (
@@ -667,10 +670,10 @@ export default function MainScreen({ route, navigation }) {
                 <Animated.View style={[styles.pulseRing, { transform:[{ scale: radarScale }], opacity: radarOpacity }]} />
                 <MaterialCommunityIcons name="radar" size={40} color={BRAND_COLOR} />
               </View>
-              <Text style={styles.bigText}>Scanning Network...</Text>
-              <Text style={styles.subtitle}>Broadcasting: Rs. {currentRide.offeredFare}</Text>
+              <Text style={styles.bigText}>Finding Drivers...</Text>
+              <Text style={styles.subtitle}>Astimating: Rs. {currentRide.offeredFare}</Text>
               
-              {bids.length > 0 && <Text style={styles.bidHeader}>INCOMING SIGNALS ({bids.length})</Text>}
+              {bids.length > 0 && <Text style={styles.bidHeader}>INCOMING OFFER ({bids.length})</Text>}
               
               <View style={{maxHeight: 200, width: '100%'}}>
                 <FlatList data={bids} keyExtractor={(item, index) => index.toString()} renderItem={({ item }) => (
@@ -695,7 +698,7 @@ export default function MainScreen({ route, navigation }) {
                 )}/>
               </View>
               <TouchableOpacity style={styles.cancelButton} onPress={resetRiderState}>
-                <Text style={styles.cancelButtonText}>ABORT MISSION</Text>
+                <Text style={styles.cancelButtonText}>CANCEL REQUEST</Text>
               </TouchableOpacity>
             </View>
           )}

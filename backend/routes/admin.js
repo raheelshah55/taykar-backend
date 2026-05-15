@@ -4,7 +4,8 @@ const Ride = require('../models/Ride');
 const verifyToken = require('../middleware/authMiddleware');
 const Settings = require('../models/Settings');
 const router = express.Router();
-
+const { Expo } = require('expo-server-sdk');
+let expo = new Expo();
 // --- 1. GET ALL USERS ---
 router.get('/users', verifyToken, async (req, res) => {
     try {
@@ -123,6 +124,44 @@ router.delete('/rides/:id', verifyToken, async (req, res) => {
         res.status(200).json({ message: "Ride deleted successfully" });
     } catch (error) {
         res.status(500).json({ message: "Server error" });
+    }
+});
+// --- 10. ADMIN BROADCAST PUSH NOTIFICATIONS ---
+router.post('/broadcast', verifyToken, async (req, res) => {
+    try {
+        const { targetRole, title, message } = req.body; // targetRole = 'rider', 'driver', or 'all'
+        
+        let query = {};
+        if (targetRole !== 'all') {
+            query.activeRole = targetRole; // Filter by Rider or Driver!
+        }
+
+        const users = await User.find(query);
+        let notifications = [];
+
+        for (let user of users) {
+            // Check if they have a valid Expo push token saved
+            if (user.pushToken && Expo.isExpoPushToken(user.pushToken)) {
+                notifications.push({
+                    to: user.pushToken,
+                    sound: 'default',
+                    title: title,
+                    body: message,
+                    data: { action: 'broadcast' },
+                });
+            }
+        }
+
+        // Expo requires us to send notifications in "chunks" (batches of 100)
+        let chunks = expo.chunkPushNotifications(notifications);
+        for (let chunk of chunks) {
+            await expo.sendPushNotificationsAsync(chunk);
+        }
+
+        res.status(200).json({ message: `Broadcast successfully sent to ${notifications.length} devices!` });
+    } catch (error) {
+        console.error("Broadcast Error:", error);
+        res.status(500).json({ message: "Failed to send broadcast." });
     }
 });
 module.exports = router;

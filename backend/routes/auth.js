@@ -129,5 +129,11 @@ router.put('/upload-docs', verifyToken, async (req, res) => {
         res.status(200).json({ message: "Documents uploaded successfully!", user });
     } catch (error) { res.status(500).json({ message: "Server error" }); }
 });
-
+// --- 7. SAVE EXPO PUSH TOKEN ---
+router.put('/push-token', verifyToken, async (req, res) => {
+    try {
+        await User.findByIdAndUpdate(req.user.userId, { pushToken: req.body.token });
+        res.status(200).json({ message: "Push token saved!" });
+    } catch (error) { res.status(500).json({ message: "Server error" }); }
+});
 module.exports = router;
