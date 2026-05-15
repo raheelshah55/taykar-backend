@@ -26,6 +26,10 @@ function App() {
   
   const [isSaving, setIsSaving] = useState(false);
   const [activeTab, setActiveTab] = useState('dashboard');
+   const [broadcastTarget, setBroadcastTarget] = useState('all');
+  const [broadcastTitle, setBroadcastTitle] = useState('');
+  const [broadcastMessage, setBroadcastMessage] = useState('');
+  const [isBroadcasting, setIsBroadcasting] = useState(false);
   const [userSearch, setUserSearch] = useState('');
   const [rideSearch, setRideSearch] = useState('');
   const [docModalUser, setDocModalUser] = useState(null);
@@ -94,7 +98,27 @@ function App() {
     if (!window.confirm(`Permanently delete this ride?`)) return;
     try { await axios.delete(`${API_URL}/api/admin/rides/${rideId}`, { headers: { Authorization: `Bearer ${token}` } }); showToast("Ride Log Deleted."); fetchData(); } catch (e) {}
   };
-
+// ✨ NEW: SEND BROADCAST ACTION ✨
+  const sendBroadcast = async (e) => {
+    e.preventDefault();
+    if (!broadcastTitle || !broadcastMessage) return alert("Title and Message are required!");
+    
+    setIsBroadcasting(true);
+    try {
+      const res = await axios.post(`${API_URL}/api/admin/broadcast`, {
+        targetRole: broadcastTarget,
+        title: broadcastTitle,
+        message: broadcastMessage
+      }, { headers: { Authorization: `Bearer ${token}` } });
+      
+      showToast(res.data.message);
+      setBroadcastTitle('');
+      setBroadcastMessage('');
+    } catch (error) {
+      alert("Failed to send broadcast.");
+    }
+    setIsBroadcasting(false);
+  };
   // --- ✨ DYNAMIC REVENUE MATH ✨ ---
   const completedRides = rides.filter(r => r.status === 'completed');
   const activeRides = rides.filter(r => r.status === 'accepted' || r.status === 'pending');
@@ -149,7 +173,9 @@ function App() {
         <button onClick={() => setActiveTab('users')} style={activeTab === 'users' ? styles.navBtnActive : styles.navBtn}>👥 User Network</button>
         <button onClick={() => setActiveTab('rides')} style={activeTab === 'rides' ? styles.navBtnActive : styles.navBtn}>🗺️ Live Transit</button>
         <button onClick={() => setActiveTab('settings')} style={activeTab === 'settings' ? styles.navBtnActive : styles.navBtn}>⚙️ Global Settings</button>
-        
+        <button onClick={() => setActiveTab('settings')} style={activeTab === 'settings' ? styles.navBtnActive : styles.navBtn}>⚙️ Global Settings</button>
+        {/* ✨ ADD THIS NEW BUTTON ✨ */}
+        <button onClick={() => setActiveTab('broadcast')} style={activeTab === 'broadcast' ? styles.navBtnActive : styles.navBtn}>📢 Broadcast Hub</button>
         <div style={{ flex: 1 }} />
         <button onClick={handleLogout} style={{ ...styles.navBtn, color: '#ff4757' }}>🚪 Terminate Session</button>
       </div>
@@ -385,6 +411,61 @@ function App() {
           </div>
         </div>
       )}
+      {/* --- TAB 5: BROADCAST HUB --- */}
+        {activeTab === 'broadcast' && (
+          <div style={{ ...styles.tableContainer, maxWidth: '800px' }}>
+            <div style={{ marginBottom: '30px' }}>
+              <h2 style={{ margin: 0, color: '#3498db' }}>📢 Global Broadcast System</h2>
+              <p style={{ color: '#88929E', marginTop: '5px' }}>Send instant push notifications directly to users' phones.</p>
+            </div>
+
+            <form onSubmit={sendBroadcast} style={{ display: 'flex', flexDirection: 'column', gap: '20px' }}>
+              
+              <div>
+                <label style={styles.label}>TARGET AUDIENCE</label>
+                <div style={{ display: 'flex', gap: '15px', marginTop: '10px' }}>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+                    <input type="radio" name="target" checked={broadcastTarget === 'all'} onChange={() => setBroadcastTarget('all')} /> Everyone
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+                    <input type="radio" name="target" checked={broadcastTarget === 'rider'} onChange={() => setBroadcastTarget('rider')} /> Only Riders 🙋‍♂️
+                  </label>
+                  <label style={{ display: 'flex', alignItems: 'center', gap: '5px', cursor: 'pointer' }}>
+                    <input type="radio" name="target" checked={broadcastTarget === 'driver'} onChange={() => setBroadcastTarget('driver')} /> Only Drivers 👨‍✈️
+                  </label>
+                </div>
+              </div>
+
+              <div>
+                <label style={styles.label}>NOTIFICATION TITLE</label>
+                <input 
+                  type="text" 
+                  placeholder="e.g. 🌧️ Rainy Day Bonus!" 
+                  value={broadcastTitle} 
+                  onChange={e => setBroadcastTitle(e.target.value)} 
+                  style={styles.inputDark} 
+                  maxLength={50}
+                />
+              </div>
+
+              <div>
+                <label style={styles.label}>MESSAGE BODY</label>
+                <textarea 
+                  placeholder="e.g. Earn 20% extra on all rides today due to heavy rain!" 
+                  value={broadcastMessage} 
+                  onChange={e => setBroadcastMessage(e.target.value)} 
+                  style={{ ...styles.inputDark, height: '100px', resize: 'none' }} 
+                  maxLength={150}
+                />
+              </div>
+
+              <button type="submit" disabled={isBroadcasting} style={{ ...styles.btnPrimary, backgroundColor: '#3498db', marginTop: '10px', height: '50px' }}>
+                {isBroadcasting ? 'TRANSMITTING...' : '🚀 DEPLOY BROADCAST'}
+              </button>
+
+            </form>
+          </div>
+        )}
     </div>
   );
 }
