@@ -1,20 +1,34 @@
-import { useContext } from 'react';
-import { StyleSheet, Text, View, TouchableOpacity, FlatList } from 'react-native';
+import { useState, useEffect, useContext } from 'react';
+import { StyleSheet, Text, View, TouchableOpacity, FlatList, ActivityIndicator } from 'react-native';
 import { MaterialCommunityIcons } from '@expo/vector-icons';
 import { AuthContext } from '../AuthContext';
+import axios from 'axios';
 
+const API_URL = 'https://taykar-backend.onrender.com'; // ⚠️ RENDER URL
 const BRAND_COLOR = '#00D06C';
 
 export default function NotificationsScreen({ navigation }) {
-  const { theme } = useContext(AuthContext);
+  const { theme, token } = useContext(AuthContext);
   const styles = getStyles(theme);
 
-  // In a real app, you would fetch this array from the backend. 
-  // For now, we simulate the notifications log locally!
-  const notifications = [
-    { id: '1', title: 'Welcome to TayKar!', body: 'Your account is fully secured and operational.', time: 'Just now', icon: 'shield-check' },
-    { id: '2', title: 'Secure Comms Active', body: 'Push notifications are now enabled on your device.', time: '2 mins ago', icon: 'bell-ring' }
-  ];
+  const [notifications, setNotifications] = useState(new Array());
+  const [loading, setLoading] = useState(true);
+
+  // ✨ NEW: Fetch REAL notifications from the Database!
+  useEffect(() => {
+    const fetchNotifs = async () => {
+      try {
+        const res = await axios.get(`${API_URL}/api/auth/notifications`, {
+          headers: { Authorization: `Bearer ${token}` }
+        });
+        setNotifications(res.data);
+      } catch (error) {
+        console.log("Failed to fetch notifications");
+      }
+      setLoading(false);
+    };
+    fetchNotifs();
+  }, new Array());
 
   return (
     <View style={styles.container}>
@@ -22,27 +36,38 @@ export default function NotificationsScreen({ navigation }) {
         <TouchableOpacity onPress={() => navigation.goBack()} style={{ padding: 5 }}>
           <MaterialCommunityIcons name="chevron-left" size={35} color={theme.text} />
         </TouchableOpacity>
-        <Text style={styles.headerTitle}>NOTIFICATIONS</Text>
+        <Text style={styles.headerTitle}>NOTIFICATIONS LOG</Text>
         <View style={{ width: 35 }} /> 
       </View>
 
-      <FlatList
-        data={notifications}
-        keyExtractor={(item) => item.id}
-        contentContainerStyle={{ padding: 20 }}
-        renderItem={({ item }) => (
-          <View style={styles.notificationCard}>
-            <View style={styles.iconBox}>
-              <MaterialCommunityIcons name={item.icon} size={24} color={BRAND_COLOR} />
+      {loading ? (
+        <ActivityIndicator size="large" color={BRAND_COLOR} style={{marginTop: 50}} />
+      ) : notifications.length === 0 ? (
+        <View style={{flex: 1, justifyContent: 'center', alignItems: 'center', opacity: 0.5}}>
+            <MaterialCommunityIcons name="bell-sleep" size={50} color={theme.border} />
+            <Text style={{color: theme.subText, marginTop: 10}}>No notifications found.</Text>
+        </View>
+      ) : (
+        <FlatList
+          data={notifications}
+          keyExtractor={(item, index) => index.toString()}
+          contentContainerStyle={{ padding: 20 }}
+          renderItem={({ item }) => (
+            <View style={styles.notificationCard}>
+              <View style={styles.iconBox}>
+                <MaterialCommunityIcons name="bell-ring" size={24} color={BRAND_COLOR} />
+              </View>
+              <View style={styles.textContainer}>
+                <Text style={styles.notifTitle}>{item.title}</Text>
+                <Text style={styles.notifBody}>{item.body}</Text>
+                <Text style={styles.notifTime}>
+                  {new Date(item.date).toLocaleDateString()} at {new Date(item.date).toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'})}
+                </Text>
+              </View>
             </View>
-            <View style={styles.textContainer}>
-              <Text style={styles.notifTitle}>{item.title}</Text>
-              <Text style={styles.notifBody}>{item.body}</Text>
-              <Text style={styles.notifTime}>{item.time}</Text>
-            </View>
-          </View>
-        )}
-      />
+          )}
+        />
+      )}
     </View>
   );
 }

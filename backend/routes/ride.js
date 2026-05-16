@@ -168,5 +168,26 @@ router.get('/history', verifyToken, async (req, res) => {
         res.status(200).json({ history, driverEarnings });
     } catch (error) { res.status(500).json({ message: "Server error" }); }
 });
+// --- 8. RIDER CANCELS RIDE REQUEST ---
+router.put('/:rideId/cancel-request', verifyToken, async (req, res) => {
+    try {
+        const ride = await Ride.findById(req.params.rideId);
+        if (!ride) return res.status(404).json({ message: "Ride not found" });
 
+        // Security check
+        if (ride.rider.toString() !== req.user.userId) {
+            return res.status(403).json({ message: "Not your ride!" });
+        }
+
+        ride.status = 'canceled';
+        await ride.save();
+
+        // 🟢 SOCKET MAGIC: Tell all drivers to instantly delete this ride from their feed!
+        req.app.get('io').emit('rideCanceledGlobal', ride._id);
+
+        res.status(200).json({ message: "Ride canceled successfully!" });
+    } catch (error) {
+        res.status(500).json({ message: "Server error" });
+    }
+});
 module.exports = router;

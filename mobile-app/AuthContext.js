@@ -1,7 +1,5 @@
 import { createContext, useState, useEffect } from 'react';
 import AsyncStorage from '@react-native-async-storage/async-storage';
-
-// ✨ HERE ARE THE IMPORTS I WAS TALKING ABOUT! ✨
 import axios from 'axios';
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
@@ -15,6 +13,28 @@ export const AuthProvider = ({ children }) => {
   const [isLoading, setIsLoading] = useState(true);
   const [isDarkMode, setIsDarkMode] = useState(true);
 
+  // ✨ NEW: Standalone Token Grabber ✨
+  const registerPushToken = async (userToken) => {
+    if (Device.isDevice) {
+      const { status: existingStatus } = await Notifications.getPermissionsAsync();
+      let finalStatus = existingStatus;
+      if (existingStatus !== 'granted') {
+        const { status } = await Notifications.requestPermissionsAsync();
+        finalStatus = status;
+      }
+      if (finalStatus === 'granted') {
+        const projectId = Constants.expoConfig?.extra?.eas?.projectId || Constants.easConfig?.projectId;
+        try {
+          const pushTokenData = await Notifications.getExpoPushTokenAsync({ projectId });
+          await axios.put(`https://taykar-backend.onrender.com/api/auth/push-token`, 
+            { token: pushTokenData.data }, 
+            { headers: { Authorization: `Bearer ${userToken}` } }
+          );
+        } catch (e) {}
+      }
+    }
+  };
+
   useEffect(() => {
     const checkMemory = async () => {
       try {
@@ -26,60 +46,30 @@ export const AuthProvider = ({ children }) => {
 
         if (savedToken && savedUser) {
           let parsedUser = JSON.parse(savedUser);
-          if (!parsedUser.name && parsedUser.firstName) {
-            parsedUser.name = `${parsedUser.firstName} ${parsedUser.lastName}`;
-          }
+          if (!parsedUser.name && parsedUser.firstName) parsedUser.name = `${parsedUser.firstName} ${parsedUser.lastName}`;
           setToken(savedToken);
           setUser(parsedUser);
+          
+          // ✨ FIX: GRAB TOKEN EVEN IF THEY WERE ALREADY LOGGED IN! ✨
+          registerPushToken(savedToken);
         }
-      } catch (e) { console.log("Memory error", e); }
+      } catch (e) {}
       setIsLoading(false);
     };
     checkMemory();
-  }, []); // Safe empty brackets!
+  }, new Array());
 
-  // ✨ THE UPDATED LOGIN FUNCTION THAT SAVES THE PUSH TOKEN ✨
   const login = async (newToken, newUser) => {
     if (!newUser.name && newUser.firstName) newUser.name = `${newUser.firstName} ${newUser.lastName}`;
-    
-    setToken(newToken);
-    setUser(newUser);
-    
+    setToken(newToken); setUser(newUser);
     await AsyncStorage.setItem('userToken', newToken);
     await AsyncStorage.setItem('userData', JSON.stringify(newUser));
-
-    // Ask for Notification Permissions!
-    if (Device.isDevice) {
-      const { status: existingStatus } = await Notifications.getPermissionsAsync();
-      let finalStatus = existingStatus;
-      if (existingStatus !== 'granted') {
-        const { status } = await Notifications.requestPermissionsAsync();
-        finalStatus = status;
-      }
-      
-      if (finalStatus === 'granted') {
-        // Get the phone's unique token
-        const projectId = Constants.expoConfig?.extra?.eas?.projectId || Constants.easConfig?.projectId;
-        
-        try {
-          const pushTokenData = await Notifications.getExpoPushTokenAsync({ projectId });
-          
-          // Send it securely to our Backend!
-          await axios.put(`https://taykar-backend.onrender.com/api/auth/push-token`, 
-            { token: pushTokenData.data }, 
-            { headers: { Authorization: `Bearer ${newToken}` } }
-          );
-          console.log("Push Token saved:", pushTokenData.data);
-        } catch (e) { 
-          console.log("Failed to save push token", e); 
-        }
-      }
-    }
+    
+    registerPushToken(newToken);
   };
 
   const logout = async () => {
-    setToken(null);
-    setUser(null);
+    setToken(null); setUser(null);
     await AsyncStorage.removeItem('userToken');
     await AsyncStorage.removeItem('userData');
   };
@@ -91,8 +81,7 @@ export const AuthProvider = ({ children }) => {
   };
 
   const theme = {
-    isDark: isDarkMode,
-    brand: '#00D06C',
+    isDark: isDarkMode, brand: '#00D06C',
     bg: isDarkMode ? '#03060A' : '#F4F6F8',
     card: isDarkMode ? '#0A121A' : '#FFFFFF',
     text: isDarkMode ? '#FFFFFF' : '#111111',
