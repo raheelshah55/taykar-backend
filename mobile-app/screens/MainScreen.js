@@ -7,7 +7,7 @@ import MapView, { Marker, Polyline } from 'react-native-maps';
 import MapViewDirections from 'react-native-maps-directions';
 import * as Location from 'expo-location';
 import { Ionicons, MaterialIcons, FontAwesome5, MaterialCommunityIcons, FontAwesome } from '@expo/vector-icons'; // ✨ Added FontAwesome for Stars
-
+import AsyncStorage from '@react-native-async-storage/async-storage';
 const API_URL = 'https://taykar-backend.onrender.com';
 const GOOGLE_MAPS_APIKEY = 'AIzaSyA6vt2kalMT_6zW-IW7ZMhpYg0AuGj01Eg'; 
 const BRAND_COLOR = '#00D06C';
@@ -30,7 +30,23 @@ export default function MainScreen({ route, navigation }) {
   const isDriverMode = user.activeRole === 'driver';
   
   const [showMenu, setShowMenu] = useState(false);
-  const [isOnline, setIsOnline] = useState(false);
+ const [isOnline, setIsOnline] = useState(false);
+
+  // ✨ RESTORE ONLINE STATUS FROM MEMORY ON LOAD ✨
+  useEffect(() => {
+    const loadOnlineStatus = async () => {
+      const savedStatus = await AsyncStorage.getItem('driverOnlineStatus');
+      if (savedStatus === 'true') setIsOnline(true);
+    };
+    loadOnlineStatus();
+  }, []);
+
+  // ✨ SAVES ONLINE STATUS TO MEMORY WHEN TOGGLED ✨
+  const handleToggleOnline = async (val) => {
+    setIsOnline(val);
+    await AsyncStorage.setItem('driverOnlineStatus', val ? 'true' : 'false');
+    if (val) fetchAvailableRides();
+  };
 
   const isDriverRef = useRef(isDriverMode);
   const isOnlineRef = useRef(isOnline);
@@ -122,7 +138,10 @@ export default function MainScreen({ route, navigation }) {
     const pricing = getSafeSettings(type);
     return Math.round(pricing.baseFare + (Number(calculatedDistance) * pricing.perKmRate));
   };
-
+// ✨ NEW: REMOVE RIDES CANCELED BY RIDERS ✨
+    socket.on('rideCanceledGlobal', (canceledRideId) => {
+      setAvailableRides((prev) => prev.filter(r => r._id !== canceledRideId));
+    });
   useEffect(() => {
     if (calculatedDistance && calculatedDistance !== "Calculating...") setFare(getCalculatedFare(vehicleType).toString());
     else setFare("Calculating...");
@@ -163,7 +182,10 @@ export default function MainScreen({ route, navigation }) {
     socket.on('rideAcceptedGlobal', (acceptedRide) => {
       setAvailableRides((prev) => prev.filter(r => r._id !== acceptedRide._id));
     });
-
+// ✨ NEW: REMOVE RIDES CANCELED BY RIDERS ✨
+    socket.on('rideCanceledGlobal', (canceledRideId) => {
+      setAvailableRides((prev) => prev.filter(r => r._id !== canceledRideId));
+    });
     // 2. Tell the WINNING driver to transition to the Map!
     socket.on(`youWonTheBid-${user._id}`, () => {
       fetchActiveRide(); 
@@ -261,7 +283,15 @@ export default function MainScreen({ route, navigation }) {
       setCurrentRide(res.data.ride); setBids(new Array());
     } catch (error) { Alert.alert("Error", "Could not request ride."); }
   };
-
+// ✨ NEW: RIDER CANCELS RIDE TO BACKEND ✨
+  const cancelRideRequest = async () => {
+    try {
+      await axios.put(`${API_URL}/api/rides/${currentRide._id}/cancel-request`, {}, { headers: { Authorization: `Bearer ${token}` } });
+      resetRiderState();
+    } catch (error) { 
+      Alert.alert("Error", "Could not cancel ride."); 
+    }
+  };
   const submitBid = async (rideId) => {
     const offerAmount = bidInputs[rideId];
     if (!offerAmount) return Alert.alert("Error", "Please enter a fare amount.");
@@ -585,7 +615,7 @@ export default function MainScreen({ route, navigation }) {
             {isOnline && <Animated.View style={[styles.radarRing, { transform: [{ scale: radarScale }], opacity: radarOpacity }]} />}
             <MaterialCommunityIcons name="radar" size={15} color={isOnline ? BRAND_COLOR : theme.subText} style={{marginRight: 10}} />
             <Text style={[styles.onlineText, { color: isOnline ? (theme.isDark ? 'white' : '#333') : theme.subText }]}>{isOnline ? 'ONLINE' : 'OFFLINE'}</Text>
-            <Switch value={isOnline} onValueChange={(val) => { setIsOnline(val); if (val) fetchAvailableRides(); }} trackColor={{ false: theme.border, true: 'rgba(0, 208, 108, 0.4)' }} thumbColor={isOnline ? BRAND_COLOR : '#888'} />
+            <Switch value={isOnline} onValueChange={handleToggleOnline} trackColor={{ false: theme.border, true: 'rgba(0, 208, 108, 0.4)' }} thumbColor={isOnline ? BRAND_COLOR : '#888'} />
           </View>
 
           {isOnline && (
@@ -616,9 +646,15 @@ export default function MainScreen({ route, navigation }) {
                       <View style={styles.addressRow}><View style={styles.dotRed} /><Text style={styles.addressText} numberOfLines={1}>{item.dropoffLocation}</Text></View>
                       
                       <View style={styles.bidActionRow}>
-                        <TextInput style={styles.bidInput} placeholder="Counter Offer (Rs.)" keyboardType="numeric" placeholderTextColor={theme.subText} value={bidInputs[item._id] || ''} onChangeText={(text) => setBidInputs({...bidInputs,[item._id]: text})} />
-                        <TouchableOpacity style={styles.primaryBtnSmall} onPress={() => submitBid(item._id)}>
-                          <Text style={styles.primaryBtnText}>Offer</Text>
+                        <TextInput style={styles.bidInput} placeholder="Counter Offer" keyboardType="numeric" placeholderTextColor={theme.subText} value={bidInputs[item._id] || ''} onChangeText={(text) => setBidInputs({...bidInputs,[item._id]: text})} />
+                        
+                        {/* ✨ NEW: RED X BUTTON TO REJECT/IGNORE RIDE ✨ */}
+                        <TouchableOpacity style={{backgroundColor: '#ff4757', paddingHorizontal: 15, justifyContent: 'center', borderRadius: 8, marginRight: 10}} onPress={() => ignoreRideRequest(item._id)}>
+                          <MaterialCommunityIcons name="close" size={20} color="white" />
+                        </TouchableOpacity>
+
+                        <TouchableOpacity style={styles.submitBidBtn} onPress={() => submitBid(item._id)}>
+                          <Text style={styles.buttonText}>Bid</Text>
                         </TouchableOpacity>
                       </View>
                     </View>
@@ -706,7 +742,7 @@ export default function MainScreen({ route, navigation }) {
                   </View>
                 )}/>
               </View>
-              <TouchableOpacity style={styles.cancelButton} onPress={resetRiderState}>
+              <TouchableOpacity style={styles.cancelButton} onPress={cancelRideRequest}>
                 <Text style={styles.cancelButtonText}>CANCEL REQUEST</Text>
               </TouchableOpacity>
             </View>
