@@ -6,6 +6,8 @@ import { Text } from 'react-native'; // For tab icons
 import * as Notifications from 'expo-notifications';
 import * as Device from 'expo-device';
 import Constants from 'expo-constants';
+import NotificationsScreen from './screens/NotificationsScreen';
+import LanguagesScreen from './screens/LanguagesScreen';
 Notifications.setNotificationHandler({
   handleNotification: async () => ({
     shouldShowAlert: true,
@@ -56,6 +58,8 @@ function RootNavigator() {
             <Stack.Screen name="Main" component={MainScreen} />
             <Stack.Screen name="Profile" component={ProfileScreen} />
             <Stack.Screen name="LocationSearch" component={LocationSearchScreen} />
+            <Stack.Screen name="Notifications" component={NotificationsScreen} />
+            <Stack.Screen name="Languages" component={LanguagesScreen} />
           </>
         )}
       </Stack.Navigator>

@@ -417,7 +417,16 @@ export default function MainScreen({ route, navigation }) {
               <Ionicons name="person-outline" size={22} color={theme.text} style={styles.menuItemIcon} />
               <Text style={styles.menuItemText}>Profile & History</Text>
             </TouchableOpacity>
-            
+           <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); navigation.navigate('Languages'); }}>
+              <Ionicons name="language-outline" size={22} color={theme.text} style={styles.menuItemIcon} />
+              <Text style={styles.menuItemText}>Languages</Text>
+            </TouchableOpacity>
+
+            {/* ✨ NEW NOTIFICATIONS BUTTON ✨ */}
+            <TouchableOpacity style={styles.menuItem} onPress={() => { setShowMenu(false); navigation.navigate('Notifications'); }}>
+              <Ionicons name="notifications-outline" size={22} color={theme.text} style={styles.menuItemIcon} />
+              <Text style={styles.menuItemText}>Notifications Hub</Text>
+            </TouchableOpacity>
             <TouchableOpacity style={styles.menuItem} onPress={() => { toggleTheme(); setShowMenu(false); }}>
               <Ionicons name={theme.isDark ? "sunny-outline" : "moon-outline"} size={22} color={theme.text} style={styles.menuItemIcon} />
               <Text style={styles.menuItemText}>Switch to {theme.isDark ? "Light" : "Dark"} Mode</Text>
