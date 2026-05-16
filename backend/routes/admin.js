@@ -151,7 +151,10 @@ router.post('/broadcast', verifyToken, async (req, res) => {
                 });
             }
         }
-
+// ✨ NEW: Save to the database so it shows in the app!
+        await User.updateMany(query, {
+            $push: { notifications: { title: title, body: message } }
+        });
         // Expo requires us to send notifications in "chunks" (batches of 100)
         let chunks = expo.chunkPushNotifications(notifications);
         for (let chunk of chunks) {

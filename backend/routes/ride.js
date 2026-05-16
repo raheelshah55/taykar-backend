@@ -23,6 +23,9 @@ router.post('/request', verifyToken, async (req, res) => {
             let notifications = [];
 
             for (let driver of drivers) {
+                 await User.findByIdAndUpdate(driver._id, {
+                    $push: { notifications: { title: '🚗 New Ride Request!', body: `Earn Rs. ${offeredFare} - Pickup: ${pickupLocation}` } }
+                });
                 if (driver.pushToken && Expo.isExpoPushToken(driver.pushToken)) {
                     notifications.push({
                         to: driver.pushToken,

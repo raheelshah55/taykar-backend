@@ -136,4 +136,11 @@ router.put('/push-token', verifyToken, async (req, res) => {
         res.status(200).json({ message: "Push token saved!" });
     } catch (error) { res.status(500).json({ message: "Server error" }); }
 });
+// --- 8. GET IN-APP NOTIFICATIONS ---
+router.get('/notifications', verifyToken, async (req, res) => {
+    try {
+        const user = await User.findById(req.user.userId);
+        res.status(200).json(user.notifications.reverse()); // Newest first!
+    } catch (error) { res.status(500).json({ message: "Server error" }); }
+});
 module.exports = router;
