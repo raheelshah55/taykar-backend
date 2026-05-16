@@ -138,10 +138,7 @@ export default function MainScreen({ route, navigation }) {
     const pricing = getSafeSettings(type);
     return Math.round(pricing.baseFare + (Number(calculatedDistance) * pricing.perKmRate));
   };
-// ✨ NEW: REMOVE RIDES CANCELED BY RIDERS ✨
-    socket.on('rideCanceledGlobal', (canceledRideId) => {
-      setAvailableRides((prev) => prev.filter(r => r._id !== canceledRideId));
-    });
+
   useEffect(() => {
     if (calculatedDistance && calculatedDistance !== "Calculating...") setFare(getCalculatedFare(vehicleType).toString());
     else setFare("Calculating...");
@@ -300,7 +297,10 @@ export default function MainScreen({ route, navigation }) {
       Alert.alert("Offer Sent");
     } catch (error) { Alert.alert("Error", "Could not Offer."); }
   };
-
+// ✨ FIX: THE MISSING IGNORE RIDE FUNCTION ✨
+  const ignoreRideRequest = (rideId) => {
+    setAvailableRides((prev) => prev.filter(r => r._id !== rideId));
+  };
   // ✨ NEW: REJECT A BID ✨
   const rejectBid = async (driverId) => {
     try {
